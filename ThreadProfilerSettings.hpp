@@ -81,8 +81,6 @@ ScopeColor GetTagColor(ProfilerTag tag);
 
 #if defined IYF_THREAD_PROFILER_IMPLEMENTATION && !defined IYF_THREAD_PROFILER_IMPLEMENTATION_INCLUDED
 
-#include <cassert>
-
 namespace iyft {
 const char* GetTagName(ProfilerTag tag) {
     switch (tag) {
@@ -91,7 +89,8 @@ const char* GetTagName(ProfilerTag tag) {
         return "Untagged";
     }
     
-    assert(0);
+    ASSERT(0);
+    return "ERROR-INVALID-VALUE";
 }
 
 ScopeColor GetTagColor(ProfilerTag tag) {
@@ -101,7 +100,8 @@ ScopeColor GetTagColor(ProfilerTag tag) {
         return ScopeColor(255, 255, 255, 255);
     }
     
-    assert(0);
+    ASSERT(0);
+    return ScopeColor(0, 0, 0, 255);
 }
 }
 

@@ -36,9 +36,9 @@
 namespace iyft {
 /// \brief An atomic_flag based spinlock.
 ///
-/// Lower latency than std::mutex because it avoids
-/// system calls. However, it is a form of busy waiting and should only be used for
-/// very short operations because you'll be wasting your CPU's time otherwise.
+/// Lower latency than std::mutex because it avoids system calls. However, it is a form
+/// of busy waiting and should only be used for very short operations because you'll be
+/// wasting your CPU's time otherwise.
 class Spinlock {
 public:
     /// \brief Locks the spinlock.

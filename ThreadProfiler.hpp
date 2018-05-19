@@ -117,6 +117,15 @@ enum class ProfilerStatus {
 // Even if recording is off, profiling adds some overhead.
 #if defined(IYF_ENABLE_PROFILING)
 
+#ifdef NDEBUG
+#define ASSERT(a) ((void)(a))
+#else // NDEBUG
+#include <cassert>
+/// A modified assert macro that doesn't cause unused variable warnings when asserions are
+/// disabled.
+#define ASSERT(a) assert(a)
+#endif // NDEBUG
+
 #include <mutex>
 #include <unordered_map>
 #include <deque>
@@ -537,7 +546,7 @@ public:
         if (isRecording()) {
             auto& lastElement = threadData.activeStack.back();
             
-            assert(key == lastElement.getKey());
+            ASSERT(key == lastElement.getKey());
             
             if (lastElement.isValid()) {
                 lastElement.setEnd(ProfilerClock::now().time_since_epoch());
@@ -1049,8 +1058,8 @@ ProfilerResults ThreadProfiler::getResults() {
             }
         }
         
-        assert(first != std::chrono::nanoseconds::max());
-        assert(last != std::chrono::nanoseconds::min());
+        ASSERT(first != std::chrono::nanoseconds::max());
+        ASSERT(last != std::chrono::nanoseconds::min());
         
         FrameData frame(0, first);
         frame.setEnd(last);
@@ -1169,7 +1178,7 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
     
     for (std::uint64_t i = 0; i < tagCount; ++i) {
         std::uint32_t tagID = ReadUInt32(is);
-        assert(i == tagID);
+        ASSERT(i == tagID);
         
         std::string name = ReadString(is);
             
@@ -1276,7 +1285,7 @@ bool ProfilerResults::writeToFile(const std::string& path) const {
     os.put(anyRecords);
     os.put(withCookie);
     
-    assert(threadNames.size() == events.size());
+    ASSERT(threadNames.size() == events.size());
     
     // Thread names
     WriteUInt64(os, threadNames.size());
@@ -1346,7 +1355,7 @@ static void writeFrameData(std::stringstream& ss, const FrameData& frame) {
 std::string ProfilerResults::writeToString() const {
     std::stringstream ss;
     
-    assert(frames.size() > 0);
+    ASSERT(frames.size() > 0);
     
     for (std::size_t i = 0; i < threadNames.size(); ++i) {
         const std::deque<RecordedEvent>& data = events[i];
@@ -1375,7 +1384,7 @@ std::string ProfilerResults::writeToString() const {
             }
             
             const auto result = scopes.find(e.getKey());
-            assert(result != scopes.end());
+            ASSERT(result != scopes.end());
             
             const ScopeInfo& info = result->second;
             
