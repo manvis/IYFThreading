@@ -104,14 +104,32 @@ enum class ProfilerStatus {
 };
 
 }
+
 /// \brief Assigns a name to the current thread.
 ///
 /// Calls iyft::AssignThreadName(), therefore make sure to read the 
-/// documentation of
-/// the said function.
+/// documentation of the said function.
 ///
 /// \param a The name of the thread. Must be a C string.
-#define IYF_PROFILER_NAME_THREAD(a) iyft::AssignThreadName(a);
+///
+/// \return If the assignment succeeded.
+#define IYF_PROFILER_NAME_THREAD(a) iyft::AssignThreadName(a)
+
+/// \brief Returns the name of the current thread.
+///
+/// Calls iyft::GetCurrentThreadName(), therefore make sure to read the 
+/// documentation of the said function.
+///
+/// \return The name of the current thread.
+#define IYF_PROFILER_GET_CURRENT_THREAD_NAME iyft::GetCurrentThreadName()
+
+/// \brief Returns the id of the current thread.
+///
+/// Calls iyft::GetCurrentThreadID(), therefore make sure to read the 
+/// documentation of the said function.
+///
+/// \return The name of the current thread.
+#define IYF_PROFILER_GET_CURRENT_THREAD_ID iyft::GetCurrentThreadID()
 
 // You should make sure that IYF_ENABLE_PROFILING is NOT DEFINED in release builds.
 // Even if recording is off, profiling adds some overhead.
@@ -123,7 +141,7 @@ enum class ProfilerStatus {
 #include <cassert>
 /// A modified assert macro that doesn't cause unused variable warnings when asserions are
 /// disabled.
-#define ASSERT(a) assert(a)
+#define ASSERT(a) assert(a);
 #endif // NDEBUG
 
 #include <mutex>
@@ -844,8 +862,17 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
     iyft::ProfilerTag::NoTag); \
     iyft::ScopeProfilerHelper ProfiledScope##name(ScopeInfo##name.getKey());
 
+/// \brief Concats the name with an ID to choose an appropriate macro.
 #define IYF_SELECT(NAME, ID) IYF_CONCAT(NAME##_, ID)
+
+/// \brief Together with IYF_VA_SIZE helps with macro "overloading".
+/// 
+/// \remark Based on https://stackoverflow.com/questions/16683146/can-macros-be-overloaded-by-number-of-arguments
 #define IYF_GET_COUNT(_1, _2, COUNT) COUNT
+
+/// \brief Together with IYF_GET_COUNT helps with macro "overloading".
+/// 
+/// \remark Based on https://stackoverflow.com/questions/16683146/can-macros-be-overloaded-by-number-of-arguments
 #define IYF_VA_SIZE(...) IYF_GET_COUNT(__VA_ARGS__, 2, 1)
 
 /// \brief A helper that chooses one of several functions.
@@ -863,10 +890,10 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
 #define IYF_PROFILER_NEXT_FRAME iyft::GetThreadProfiler().nextFrame();
 
 /// \brief Returns the status of the profiler as a ProfilerStatus value. 
-#define IYF_PROFILER_STATUS iyft::GetThreadProfiler().isRecording() ? iyft::ProfilerStatus::EnabledAndRecording : iyft::ProfilerStatus::EnabledAndNotRecording
+#define IYF_PROFILER_STATUS (iyft::GetThreadProfiler().isRecording() ? iyft::ProfilerStatus::EnabledAndRecording : iyft::ProfilerStatus::EnabledAndNotRecording)
 
 /// \brief Stops the recording (if it's running) and writes the data to a string.
-#define IYF_PROFILER_RESULT_STRING iyft::GetThreadProfiler().getResults().writeToString();
+#define IYF_PROFILER_RESULT_STRING iyft::GetThreadProfiler().getResults().writeToString()
 
 /// \brief Writes results to a file.
 ///
@@ -882,7 +909,7 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
 #define IYF_PROFILER_SET_RECORDING(a) ((void)0);
 #define IYF_PROFILER_NEXT_FRAME ((void)0);
 #define IYF_PROFILER_STATUS iyft::ProfilerStatus::Disabled
-#define IYF_PROFILER_RESULT_STRING std::string("PROFILER-IS-DISABLED");
+#define IYF_PROFILER_RESULT_STRING std::string("PROFILER-IS-DISABLED")
 #define IYF_PROFILER_RESULTS_TO_FILE(fileName) ((void)0);
 
 #endif //  defined(IYF_ENABLE_PROFILING)
