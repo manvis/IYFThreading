@@ -90,9 +90,9 @@ int main() {
     // Identical to IYF_PROFILER_GET_CURRENT_THREAD_NAME
     const char* threadName = iyft::GetCurrentThreadName();
     
-    ASSERT(assigned);
-    ASSERT(threadID == 0);
-    ASSERT(std::strcmp("MAIN", threadName) == 0);
+    IYF_ASSERT(assigned);
+    IYF_ASSERT(threadID == 0);
+    IYF_ASSERT(std::strcmp("MAIN", threadName) == 0);
     
     std::cout << "Main thread name assigned? " << std::boolalpha << assigned << 
                  "\nID: " << threadID <<
@@ -116,7 +116,10 @@ int main() {
             break;
     }
     
-    ASSERT(IYF_PROFILER_STATUS == iyft::ProfilerStatus::EnabledAndRecording);
+// A check to make sure we don't get errors in ThreadPool only builds
+#ifdef IYF_ENABLE_PROFILING
+    IYF_ASSERT(IYF_PROFILER_STATUS == iyft::ProfilerStatus::EnabledAndRecording);
+#endif // IYF_ENABLE_PROFILING
     
     // Tracks total time
     const auto start = std::chrono::high_resolution_clock::now();
@@ -148,7 +151,7 @@ int main() {
     
     // Validates the worker count
     const std::size_t threadCount = pool->getWorkerCount();
-    ASSERT(threadCount == std::thread::hardware_concurrency());
+    IYF_ASSERT(threadCount == std::thread::hardware_concurrency());
     
     // "Simulates" frames
     for (std::size_t i = 0; i < IterationCount; ++i) {
@@ -173,7 +176,7 @@ int main() {
         
         // Blocks the current thread until the answer gets returned.
         std::size_t theAnswer = resultFuture.get();
-        ASSERT(theAnswer == 42);
+        IYF_ASSERT(theAnswer == 42);
         
         pool->addTask(sleeperLambda, incrementExpected(5ms));
         
@@ -193,6 +196,8 @@ int main() {
         }
     }
     
+// A check to make sure we don't get errors in ThreadPool only builds
+#ifdef IYF_ENABLE_PROFILING 
     // You may also use IYF_PROFILER_RESULTS_TO_FILE("profilerResults") to write the results to a file
     // or IYF_PROFILER_RESULT_STRING to write them to an std::string.
     //
@@ -201,8 +206,9 @@ int main() {
     // this function on a separate thread. However, make sure that recording DOES NOT GET ENABLED until 
     // this function is done or you may get very scrambled eggs for breakfast.
     auto resultStart = std::chrono::high_resolution_clock::now();
-    iyft::ProfilerResults real = iyft::GetThreadProfiler().getResults();
+    iyft::ProfilerResults results = iyft::GetThreadProfiler().getResults();
     auto resultEnd = std::chrono::high_resolution_clock::now();
+#endif // IYF_ENABLE_PROFILING 
     
     // Make sure to finish all tasks
     pool = nullptr;
@@ -218,22 +224,26 @@ int main() {
     std::cout << "COMPLETED WORK IN " << std::fixed << duration.count() << "ms\n";
     std::cout << "Single thread would have taken " << expectedTime.count() << "ms\n";
     std::cout << "Improvement: " << expectedTime.count() / duration.count() << " x\n";
+    
+// A check to make sure we don't get errors in ThreadPool only builds
+#ifdef IYF_ENABLE_PROFILING
     std::chrono::duration<double, std::milli> resultDuraion = resultEnd - resultStart;
     std::cout << "Result extraction took: " << resultDuraion.count() << "ms\n";
     
     // Now that we're done measuring, output the results to a file and try to read them.
     std::cout << std::boolalpha;
-    std::cout << "Result write succeeded? " << real.writeToFile("profilerResults.profres") << "\n";
+    std::cout << "Result write succeeded? " << results.writeToFile("profilerResults.profres") << "\n";
     std::optional<iyft::ProfilerResults> loadedResults = iyft::ProfilerResults::LoadFromFile("profilerResults.profres");
     
     if (!loadedResults) {
         std::cout << "Failed to load results from file\n";
-        ASSERT(false);
+        IYF_ASSERT(false);
     } else {
         // Check to make sure serialization and deserialization work
-        ASSERT(*loadedResults == real);
+        IYF_ASSERT(*loadedResults == results);
         std::cout << (*loadedResults).writeToString() << "\n";
     }
+#endif // IYF_ENABLE_PROFILING 
     
     return 0;
 }

@@ -89,7 +89,7 @@ const char* GetTagName(ProfilerTag tag) {
         return "Untagged";
     }
     
-    ASSERT(0);
+    IYF_ASSERT(0);
     return "ERROR-INVALID-VALUE";
 }
 
@@ -100,7 +100,7 @@ ScopeColor GetTagColor(ProfilerTag tag) {
         return ScopeColor(255, 255, 255, 255);
     }
     
-    ASSERT(0);
+    IYF_ASSERT(0);
     return ScopeColor(0, 0, 0, 255);
 }
 }

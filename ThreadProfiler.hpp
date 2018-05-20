@@ -131,18 +131,18 @@ enum class ProfilerStatus {
 /// \return The name of the current thread.
 #define IYF_PROFILER_GET_CURRENT_THREAD_ID iyft::GetCurrentThreadID()
 
-// You should make sure that IYF_ENABLE_PROFILING is NOT DEFINED in release builds.
-// Even if recording is off, profiling adds some overhead.
-#if defined(IYF_ENABLE_PROFILING)
-
 #ifdef NDEBUG
-#define ASSERT(a) ((void)(a))
+#define IYF_ASSERT(a) ((void)(a))
 #else // NDEBUG
 #include <cassert>
 /// A modified assert macro that doesn't cause unused variable warnings when asserions are
 /// disabled.
-#define ASSERT(a) assert(a);
+#define IYF_ASSERT(a) assert(a);
 #endif // NDEBUG
+
+// You should make sure that IYF_ENABLE_PROFILING is NOT DEFINED in release builds.
+// Even if recording is off, profiling adds some overhead.
+#if defined(IYF_ENABLE_PROFILING)
 
 #include <mutex>
 #include <unordered_map>
@@ -567,7 +567,7 @@ public:
         if (isRecording()) {
             auto& lastElement = threadData.activeStack.back();
             
-            ASSERT(key == lastElement.getKey());
+            IYF_ASSERT(key == lastElement.getKey());
             
             if (lastElement.isValid()) {
                 lastElement.setEnd(ProfilerClock::now().time_since_epoch());
@@ -1091,8 +1091,8 @@ ProfilerResults ThreadProfiler::getResults() {
             }
         }
         
-        ASSERT(first != std::chrono::nanoseconds::max());
-        ASSERT(last != std::chrono::nanoseconds::min());
+        IYF_ASSERT(first != std::chrono::nanoseconds::max());
+        IYF_ASSERT(last != std::chrono::nanoseconds::min());
         
         FrameData frame(0, first);
         frame.setEnd(last);
@@ -1217,7 +1217,7 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
     
     for (std::uint64_t i = 0; i < tagCount; ++i) {
         std::uint32_t tagID = ReadUInt32(is);
-        ASSERT(i == tagID);
+        IYF_ASSERT(i == tagID);
         
         std::string name = ReadString(is);
         
@@ -1329,7 +1329,7 @@ bool ProfilerResults::writeToFile(const std::string& path) const {
     os.put(anyRecords);
     os.put(withCookie);
     
-    ASSERT(threadNames.size() == events.size());
+    IYF_ASSERT(threadNames.size() == events.size());
     
     // Thread names
     WriteUInt64(os, threadNames.size());
@@ -1399,7 +1399,7 @@ static void writeFrameData(std::stringstream& ss, const FrameData& frame) {
 std::string ProfilerResults::writeToString() const {
     std::stringstream ss;
     
-    ASSERT(frames.size() > 0);
+    IYF_ASSERT(frames.size() > 0);
     
     for (std::size_t i = 0; i < threadNames.size(); ++i) {
         const std::deque<RecordedEvent>& data = events[i];
@@ -1428,7 +1428,7 @@ std::string ProfilerResults::writeToString() const {
             }
             
             const auto result = scopes.find(e.getKey());
-            ASSERT(result != scopes.end());
+            IYF_ASSERT(result != scopes.end());
             
             const ScopeInfo& info = result->second;
             
