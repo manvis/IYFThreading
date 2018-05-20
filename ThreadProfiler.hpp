@@ -868,12 +868,14 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
 /// \brief Together with IYF_VA_SIZE helps with macro "overloading".
 /// 
 /// \remark Based on https://stackoverflow.com/questions/16683146/can-macros-be-overloaded-by-number-of-arguments
-#define IYF_GET_COUNT(_1, _2, COUNT) COUNT
+/// and https://stackoverflow.com/a/11172679
+#define IYF_GET_COUNT(_1, _2, COUNT, ...) COUNT
 
 /// \brief Together with IYF_GET_COUNT helps with macro "overloading".
 /// 
 /// \remark Based on https://stackoverflow.com/questions/16683146/can-macros-be-overloaded-by-number-of-arguments
-#define IYF_VA_SIZE(...) IYF_GET_COUNT(__VA_ARGS__, 2, 1)
+/// and https://stackoverflow.com/a/11172679
+#define IYF_VA_SIZE(...) IYF_GET_COUNT(__VA_ARGS__, 2, 1, discardMe)
 
 /// \brief A helper that chooses one of several functions.
 #define IYF_PROFILE_MACRO_PICKER(NAME, ...) IYF_SELECT(NAME, IYF_VA_SIZE(__VA_ARGS__))(__VA_ARGS__)
@@ -905,7 +907,7 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
 #else //  defined(IYF_ENABLE_PROFILING)
 
 // These will get optimized away if profiling is disabled
-#define IYF_PROFILE(name) ((void)0);
+#define IYF_PROFILE(...) ((void)0);
 #define IYF_PROFILER_SET_RECORDING(a) ((void)0);
 #define IYF_PROFILER_NEXT_FRAME ((void)0);
 #define IYF_PROFILER_STATUS iyft::ProfilerStatus::Disabled

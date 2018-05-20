@@ -47,11 +47,13 @@ using namespace std::chrono_literals;
 
 /// A function used for demo purposes.
 void subSleeper() {
-    IYF_PROFILE(subSleeper);
+    /// Using an explicitly set tag
+    IYF_PROFILE(subSleeper, iyft::ProfilerTag::NoTag);
 }
 
 /// A function used for demo purposes.
 void sleeper(std::chrono::nanoseconds ns) {
+    /// Implicitly using iyft::ProfilerTag::NoTag as a tag
     IYF_PROFILE(sleeper);
     std::this_thread::sleep_for(ns);
     
@@ -60,6 +62,7 @@ void sleeper(std::chrono::nanoseconds ns) {
 
 /// A function used for demo purposes.
 std::size_t sleepingAnswer(std::chrono::nanoseconds ns, bool correctAnswer) {
+    /// Implicitly using iyft::ProfilerTag::NoTag as a tag
     IYF_PROFILE(sleepingAnswer);
     std::this_thread::sleep_for(ns);
     
@@ -229,6 +232,7 @@ int main() {
     } else {
         // Check to make sure serialization and deserialization work
         ASSERT(*loadedResults == real);
+        std::cout << (*loadedResults).writeToString() << "\n";
     }
     
     return 0;
