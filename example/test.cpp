@@ -223,7 +223,7 @@ int main() {
     std::cout << "USED " << threadCount << " thread(s)\n";
     std::cout << "COMPLETED WORK IN " << std::fixed << duration.count() << "ms\n";
     std::cout << "Single thread would have taken " << expectedTime.count() << "ms\n";
-    std::cout << "Improvement: " << expectedTime.count() / duration.count() << " x\n";
+    std::cout << "Improvement: " << static_cast<double>(expectedTime.count()) / duration.count() << " x\n";
     
 // A check to make sure we don't get errors in ThreadPool only builds
 #ifdef IYF_ENABLE_PROFILING

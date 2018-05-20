@@ -1,6 +1,6 @@
 # The IYFThreading library
 
-This is a small, header only C++17 library that contains a thread pool and a thread profiler. It is licensed under the [3-clause BSD] license and only depends on the standard library. Last but not least, when testing 
+This is a small, header only C++17 library that contains a thread pool and a thread profiler. It is licensed under the [3-clause BSD] license and depends only on the standard library. Last but not least, when testing, this library is built with -fsanitize=thread and the sanitizer does not detect any invalid behaviour.
 
 This library consists of a couple components that, for the most part, may be used independently of one another:
 
