@@ -132,6 +132,8 @@ enum class ProfilerStatus {
 #include <vector>
 #include <chrono>
 #include <optional>
+#include <array>
+#include <string>
 #include "Spinlock.hpp"
 
 namespace iyft {
@@ -265,7 +267,7 @@ public:
     /// \param fileName The name of the file that the the profiled scope reisdes in.
     /// \param lineNumber The line number of the profiled scope.
     /// \param tag A tag assigned to the profiled scope
-    inline ScopeInfo(ScopeKey key, std::string name, std::string functionName, std::string fileName, std::size_t lineNumber, ProfilerTag tag)
+    inline ScopeInfo(ScopeKey key, std::string name, std::string functionName, std::string fileName, std::uint32_t lineNumber, ProfilerTag tag)
         : key(key), tag(tag), name(std::move(name)), functionName(std::move(functionName)), fileName(std::move(fileName)), lineNumber(lineNumber) {}
     
     /// \brief Returns the key of this scope.
@@ -299,7 +301,7 @@ public:
     /// \brief The line number of the profiled scope.
     ///
     /// \return The line number that marks the start of the profiled scope.
-    inline std::size_t getLineNumber() const {
+    inline std::uint32_t getLineNumber() const {
         return lineNumber;
     }
     
@@ -498,10 +500,11 @@ public:
     /// macro.
     /// \param line The number of the line. Must be the result of the __LINE__ macro.
     /// \param tag The tag of the scope.
-    inline ScopeInfo& insertScopeInfo(const char* scopeName, const char* identifier, const char* functionName, const char* fileName, std::size_t line, ProfilerTag tag) {
+    inline ScopeInfo& insertScopeInfo(const char* scopeName, const char* identifier, const char* functionName, const char* fileName, std::uint32_t line, ProfilerTag tag) {
         std::lock_guard<Spinlock> lock(scopeMapSpinLock);
         
-        const ScopeKey scopeKey(IYF_THREAD_PROFILER_HASH(std::string(identifier)));
+        const std::uint32_t hash = static_cast<std::uint32_t>(IYF_THREAD_PROFILER_HASH(std::string(identifier)));
+        const ScopeKey scopeKey(hash);
         
         auto result = scopes.find(scopeKey);
         if (result != scopes.end()) {
@@ -625,7 +628,7 @@ private:
         std::deque<RecordedEvent> recordedEvents;
         
         /// Current stack depth.
-        std::int64_t depth;
+        std::int32_t depth;
     #ifdef IYF_PROFILER_WITH_COOKIE
         std::uint64_t cookie;
     #endif // IYF_PROFILER_WITH_COOKIE
@@ -817,10 +820,10 @@ private:
 ///
 /// \param a The left side of the final string.
 /// \param b The right side of the final string.
-#define IYF_CONCAT(a, b) IYF_STRINGIFY(a) ## IYF_STRINGIFY(b)
+#define IYF_CONCAT(a, b) a ## b
 
 /// \brief Profiles a named scope with a tag.
-#define IYF_PROFILE_TAGGED(name, tag) \
+#define IYF_PROFILE_2(name, tag) \
 static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeInfo(\
     #name,\
     __FILE__ ":" IYF_EXPAND(__LINE__),\
@@ -831,7 +834,7 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
     iyft::ScopeProfilerHelper ProfiledScope##name(ScopeInfo##name.getKey());
 
 /// \brief Profiles a named scope without a tag.
-#define IYF_PROFILE_UNTAGGED(name) \
+#define IYF_PROFILE_1(name) \
 static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeInfo(\
     #name,\
     __FILE__ ":" IYF_EXPAND(__LINE__),\
@@ -841,14 +844,15 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
     iyft::ProfilerTag::NoTag); \
     iyft::ScopeProfilerHelper ProfiledScope##name(ScopeInfo##name.getKey());
 
+#define IYF_SELECT(NAME, ID) IYF_CONCAT(NAME##_, ID)
+#define IYF_GET_COUNT(_1, _2, COUNT) COUNT
+#define IYF_VA_SIZE(...) IYF_GET_COUNT(__VA_ARGS__, 2, 1)
+
 /// \brief A helper that chooses one of several functions.
-#define IYF_PROFILE_MACRO_PICKER(x, name, tag, FUNCTION_NAME) FUNCTION_NAME
+#define IYF_PROFILE_MACRO_PICKER(NAME, ...) IYF_SELECT(NAME, IYF_VA_SIZE(__VA_ARGS__))(__VA_ARGS__)
 
 /// \brief Depending on the number of parameters, chooses one of profiling macros.
-#define IYF_PROFILE(...) IYF_PROFILE_MACRO_PICKER(,##__VA_ARGS__,\
-                                                  IYF_PROFILE_TAGGED(__VA_ARGS__),\
-                                                  IYF_PROFILE_UNTAGGED(__VA_ARGS__)\
-                                                  )
+#define IYF_PROFILE(...) IYF_PROFILE_MACRO_PICKER(IYF_PROFILE, __VA_ARGS__)
 
 /// \brief Used to start or stop a recording
 ///
@@ -1110,6 +1114,12 @@ inline static std::int32_t ReadInt32(std::istream& is) {
     return num;
 }
 
+inline static std::uint8_t ReadUInt8(std::istream& is) {
+    std::uint8_t num;
+    is.read(reinterpret_cast<char*>(&num), sizeof(std::uint8_t));
+    return num;
+}
+
 inline static std::chrono::nanoseconds ReadNanos(std::istream& is) {
     std::int64_t num;
     is.read(reinterpret_cast<char*>(&num), sizeof(std::int64_t));
@@ -1181,11 +1191,12 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
         ASSERT(i == tagID);
         
         std::string name = ReadString(is);
-            
-        const std::uint8_t r = is.get();
-        const std::uint8_t g = is.get();
-        const std::uint8_t b = is.get();
-        const std::uint8_t a = is.get();
+        
+        
+        const std::uint8_t r = ReadUInt8(is);
+        const std::uint8_t g = ReadUInt8(is);
+        const std::uint8_t b = ReadUInt8(is);
+        const std::uint8_t a = ReadUInt8(is);
         ScopeColor color(r, g, b, a);
         
         TagNameAndColor nameAndColor(std::move(name), std::move(color));
@@ -1255,13 +1266,17 @@ inline static void WriteInt32(std::ostream& os, std::int32_t num) {
     os.write(reinterpret_cast<const char*>(&num), sizeof(std::int32_t));
 }
 
+inline static void WriteUInt8(std::ostream& os, std::uint8_t num) {
+    os.write(reinterpret_cast<const char*>(&num), sizeof(std::uint8_t));
+}
+
 inline static void WriteNanos(std::ostream& os, std::chrono::nanoseconds ns) {
     const std::int64_t time = ns.count();
     os.write(reinterpret_cast<const char*>(&time), sizeof(std::int64_t));
 }
 
 inline static void WriteString(std::ostream& os, const std::string& string) {
-    const std::uint16_t length = string.length();
+    const std::uint16_t length = static_cast<std::uint16_t>(string.length());
     os.write(reinterpret_cast<const char*>(&length), sizeof(std::uint16_t));
     os.write(string.c_str(), length);
 }
@@ -1309,10 +1324,10 @@ bool ProfilerResults::writeToFile(const std::string& path) const {
         WriteString(os, t.second.getName());
         
         const ScopeColor& c = t.second.getColor();
-        os.put(c.getRed());
-        os.put(c.getGreen());
-        os.put(c.getBlue());
-        os.put(c.getAlpha());
+        WriteUInt8(os, c.getRed());
+        WriteUInt8(os, c.getGreen());
+        WriteUInt8(os, c.getBlue());
+        WriteUInt8(os, c.getAlpha());
     }
     
     // Scope info
@@ -1390,7 +1405,8 @@ std::string ProfilerResults::writeToString() const {
             
             const IYF_THREAD_TEXT_OUTPUT_DURATION d = e.getDuration();
             
-            const std::string depthOffset(e.getDepth() * 2 + 4, ' ');
+            const std::size_t offset = static_cast<std::size_t>(e.getDepth() * 2 + 4);
+            const std::string depthOffset(offset, ' ');
             ss << depthOffset << "SCOPE: " << info.getName()
 #ifdef IYF_PROFILER_WITH_COOKIE
                << "; Cookie: " << e.getCookie()
