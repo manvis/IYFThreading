@@ -12,7 +12,7 @@ This library consists of a couple components that, for the most part, may be use
 This library is still being tested and refined. Moreover, a couple important features (e.g., drawing results with the help of imgui) haven't been implemented yet.
 
 ## Configuration
-Two macros need to be defined *(or not, if you want to disable the features)* globally, e.g., in your CMake file:
+Two macros need to be defined (or not, if you want to disable the features) globally, e.g., in your CMake file:
 
 1. ```IYF_ENABLE_PROFILING```
 
@@ -26,7 +26,12 @@ Two macros need to be defined *(or not, if you want to disable the features)* gl
 
 Other options only apply to the thread profiler. They are documented in the **ThreadProfilerSettings.hpp** header and should be adjusted there. You should also use the said header to define custom scope tags, names and colours, suitable for your application.
 
+## Documentation
+To build the full documentation, use Doxygen with the provided Doxyfile.
+
 ## Usage
+
+This is a simple example. For a more complete example that uses more features, check out the contents of the ```examples``` folder.
 
 ```cpp
 // This needs to be built with -DIYF_ENABLE_PROFILING (and, optionally, -DIYF_THREAD_POOL_PROFILE), e.g, on Linux:
