@@ -829,10 +829,15 @@ private:
 /// \param a Object to stringify.
 #define IYF_STRINGIFY(a) #a
 
-/// \brief Used to expand a macro.
+/// \brief Used to expand and stringify a macro.
 ///
 /// \param a Object to expand and stringify.
-#define IYF_EXPAND(a) IYF_STRINGIFY(a)
+#define IYF_EXPAND_STRINGIFY(a) IYF_STRINGIFY(a)
+
+/// \brief Used to expand a macro.
+///
+/// \param a Object to expand
+#define IYF_EXPAND(a) a
 
 /// \brief Concatenates two strings.
 ///
@@ -844,7 +849,7 @@ private:
 #define IYF_PROFILE_2(name, tag) \
 static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeInfo(\
     #name,\
-    __FILE__ ":" IYF_EXPAND(__LINE__),\
+    __FILE__ ":" IYF_EXPAND_STRINGIFY(__LINE__),\
     __func__,\
     __FILE__,\
     __LINE__,\
@@ -855,7 +860,7 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
 #define IYF_PROFILE_1(name) \
 static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeInfo(\
     #name,\
-    __FILE__ ":" IYF_EXPAND(__LINE__),\
+    __FILE__ ":" IYF_EXPAND_STRINGIFY(__LINE__),\
     __func__,\
     __FILE__,\
     __LINE__,\
@@ -875,7 +880,7 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::GetThreadProfiler().insertScopeI
 /// 
 /// \remark Based on https://stackoverflow.com/questions/16683146/can-macros-be-overloaded-by-number-of-arguments
 /// and https://stackoverflow.com/a/11172679
-#define IYF_VA_SIZE(...) IYF_GET_COUNT(__VA_ARGS__, 2, 1, discardMe)
+#define IYF_VA_SIZE(...) IYF_EXPAND(IYF_GET_COUNT(__VA_ARGS__, 2, 1, discardMe))
 
 /// \brief A helper that chooses one of several functions.
 #define IYF_PROFILE_MACRO_PICKER(NAME, ...) IYF_SELECT(NAME, IYF_VA_SIZE(__VA_ARGS__))(__VA_ARGS__)
