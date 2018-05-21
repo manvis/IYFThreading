@@ -31,17 +31,9 @@
 #ifndef IYF_THREAD_PROFILER_HPP
 #define IYF_THREAD_PROFILER_HPP
 
-#ifndef IYF_THREAD_PROFILER_MAX_THREAD_COUNT
-/// \brief The maximum number of threads that the ThreadProfiler will need to track.
-///
-/// Default value is 16.
-///
-/// \warning Must be >= 1
-#define IYF_THREAD_PROFILER_MAX_THREAD_COUNT 16
-#endif // IYF_THREAD_PROFILER_MAX_THREAD_COUNT
-
 // For std::size_t
 #include <cstddef>
+#include <cstdint>
 
 namespace iyft {
 // --- These first few functions may be useful even if profiling is disabled ---
@@ -103,58 +95,6 @@ enum class ProfilerStatus {
     EnabledAndRecording /*!< The profiler is enabled and recording. */
 };
 
-}
-
-/// \brief Assigns a name to the current thread.
-///
-/// Calls iyft::AssignThreadName(), therefore make sure to read the 
-/// documentation of the said function.
-///
-/// \param a The name of the thread. Must be a C string.
-///
-/// \return If the assignment succeeded.
-#define IYF_PROFILER_NAME_THREAD(a) iyft::AssignThreadName(a)
-
-/// \brief Returns the name of the current thread.
-///
-/// Calls iyft::GetCurrentThreadName(), therefore make sure to read the 
-/// documentation of the said function.
-///
-/// \return The name of the current thread.
-#define IYF_PROFILER_GET_CURRENT_THREAD_NAME iyft::GetCurrentThreadName()
-
-/// \brief Returns the id of the current thread.
-///
-/// Calls iyft::GetCurrentThreadID(), therefore make sure to read the 
-/// documentation of the said function.
-///
-/// \return The name of the current thread.
-#define IYF_PROFILER_GET_CURRENT_THREAD_ID iyft::GetCurrentThreadID()
-
-#ifdef NDEBUG
-#define IYF_ASSERT(a) ((void)(a))
-#else // NDEBUG
-#include <cassert>
-/// A modified assert macro that doesn't cause unused variable warnings when asserions are
-/// disabled.
-#define IYF_ASSERT(a) assert(a);
-#endif // NDEBUG
-
-// You should make sure that IYF_ENABLE_PROFILING is NOT DEFINED in release builds.
-// Even if recording is off, profiling adds some overhead.
-#if defined(IYF_ENABLE_PROFILING)
-
-#include <mutex>
-#include <unordered_map>
-#include <deque>
-#include <vector>
-#include <chrono>
-#include <optional>
-#include <array>
-#include <string>
-#include "Spinlock.hpp"
-
-namespace iyft {
 /// \brief An RGBA color that will be used for scopes tagged with a specific ProfilerTag.
 class ScopeColor {
 public:
@@ -205,12 +145,29 @@ private:
     std::uint8_t b;
     std::uint8_t a;
 };
+
 }
+
+#ifdef NDEBUG
+#define IYF_ASSERT(a) ((void)(a))
+#else // NDEBUG
+#include <cassert>
+/// A modified assert macro that doesn't cause unused variable warnings when asserions are
+/// disabled.
+#define IYF_ASSERT(a) assert(a);
+#endif // NDEBUG
 
 // This is a special file where you can place various settings
 #include "ThreadProfilerSettings.hpp"
 
-static_assert(IYF_THREAD_PROFILER_MAX_THREAD_COUNT >= 1);
+#ifndef IYF_THREAD_PROFILER_MAX_THREAD_COUNT
+/// \brief The maximum number of threads that the ThreadProfiler will need to track.
+///
+/// Default value is 16.
+///
+/// \warning Must be >= 1
+#define IYF_THREAD_PROFILER_MAX_THREAD_COUNT 16
+#endif // IYF_THREAD_PROFILER_MAX_THREAD_COUNT
 
 #ifndef IYF_THREAD_PROFILER_HASH
 /// \brief A hashing function that will be used to make ScopeKey objects.
@@ -226,6 +183,48 @@ static_assert(IYF_THREAD_PROFILER_MAX_THREAD_COUNT >= 1);
 /// \brief A string that names the duration. 
 #define IYF_THREAD_TEXT_OUTPUT_NAME "ms"
 #endif // !defined IYF_THREAD_TEXT_OUTPUT_DURATION || !defined IYF_THREAD_TEXT_OUTPUT_NAME
+
+static_assert(IYF_THREAD_PROFILER_MAX_THREAD_COUNT >= 1);
+
+/// \brief Assigns a name to the current thread.
+///
+/// Calls iyft::AssignThreadName(), therefore make sure to read the 
+/// documentation of the said function.
+///
+/// \param a The name of the thread. Must be a C string.
+///
+/// \return If the assignment succeeded.
+#define IYF_PROFILER_NAME_THREAD(a) iyft::AssignThreadName(a)
+
+/// \brief Returns the name of the current thread.
+///
+/// Calls iyft::GetCurrentThreadName(), therefore make sure to read the 
+/// documentation of the said function.
+///
+/// \return The name of the current thread.
+#define IYF_PROFILER_GET_CURRENT_THREAD_NAME iyft::GetCurrentThreadName()
+
+/// \brief Returns the id of the current thread.
+///
+/// Calls iyft::GetCurrentThreadID(), therefore make sure to read the 
+/// documentation of the said function.
+///
+/// \return The name of the current thread.
+#define IYF_PROFILER_GET_CURRENT_THREAD_ID iyft::GetCurrentThreadID()
+
+// You should make sure that IYF_ENABLE_PROFILING is NOT DEFINED in release builds.
+// Even if recording is off, profiling adds some overhead.
+#if defined(IYF_ENABLE_PROFILING)
+
+#include <mutex>
+#include <unordered_map>
+#include <deque>
+#include <vector>
+#include <chrono>
+#include <optional>
+#include <array>
+#include <string>
+#include "Spinlock.hpp"
 
 namespace iyft {
 /// \brief The clock that the profiler will use.
