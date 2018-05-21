@@ -33,5 +33,5 @@ endif()
 add_definitions("-DIYF_ENABLE_PROFILING -DIYF_THREAD_POOL_PROFILE")
 find_package(Threads REQUIRED)
 
-add_executable(threadPoolTest test.cpp incl.cpp)
+add_executable(threadPoolTest Test.cpp Implementation.cpp)
 target_link_libraries(threadPoolTest Threads::Threads)
