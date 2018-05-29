@@ -1,35 +1,35 @@
-// This needs to be built with -DIYF_ENABLE_PROFILING (and, optionally, -DIYF_THREAD_POOL_PROFILE), e.g, on Linux:
+// This needs to be built with -DIYFT_ENABLE_PROFILING (and, optionally, -DIYFT_THREAD_POOL_PROFILE), e.g, on Linux:
 //
-// clang++ -pthread -std=c++17 -Wall -Wextra -pedantic -DIYF_ENABLE_PROFILING -DIYF_THREAD_POOL_PROFILE MinimalTest.cpp
+// clang++ -pthread -std=c++17 -Wall -Wextra -pedantic -DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE MinimalTest.cpp
 // OR
-// g++ -pthread -std=c++17 -Wall -Wextra -pedantic -DIYF_ENABLE_PROFILING -DIYF_THREAD_POOL_PROFILE MinimalTest.cpp
+// g++ -pthread -std=c++17 -Wall -Wextra -pedantic -DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE MinimalTest.cpp
 
 #include <iostream>
 #include <string>
 
 // Add the profiler and designate this cpp file as the implementation
-#define IYF_THREAD_PROFILER_IMPLEMENTATION
+#define IYFT_THREAD_PROFILER_IMPLEMENTATION
 #include "ThreadProfiler.hpp"
 
-// Add the pool AFTER the profiler if IYF_THREAD_POOL_PROFILE is defined
+// Add the pool AFTER the profiler if IYFT_THREAD_POOL_PROFILE is defined
 #include "ThreadPool.hpp"
 
 #define FRAME_COUNT 5
 
 std::string withResult(std::size_t num, const std::string& str) {
-    IYF_PROFILE(TaskWithResult, iyft::ProfilerTag::NoTag);
+    IYFT_PROFILE(TaskWithResult, iyft::ProfilerTag::NoTag);
     
     return str + std::to_string(num);
 }
 
 int main() {
     // Name this thread (optional - a name will be assigned by default otherwise)
-    IYF_PROFILER_NAME_THREAD("Main");
+    IYFT_PROFILER_NAME_THREAD("Main");
     
     // Start the recording
-    IYF_PROFILER_SET_RECORDING(true);
+    IYFT_PROFILER_SET_RECORDING(true);
     
-    // Create a thread pool with std::thread::hardware_concurrency() workers.
+    // Create a thread pool with std::thread::hardware_concurrency() - 1 workers.
     iyft::ThreadPool pool;
     
     // This string needs to be kept alive until we're done with it.
@@ -41,7 +41,7 @@ int main() {
         
         // Add a task lambda with no result
         pool.addTask([](){
-            IYF_PROFILE(TaskWithoutAResult, iyft::ProfilerTag::NoTag);
+            IYFT_PROFILE(TaskWithoutAResult, iyft::ProfilerTag::NoTag);
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         });
         
@@ -49,15 +49,15 @@ int main() {
         pool.waitForAll();
         
         // This should happen immediately because we waited for all tasks
-        IYF_ASSERT(result.get() == (test + std::to_string(i)));
+        IYFT_ASSERT(result.get() == (test + std::to_string(i)));
         
         // Mark the end of the frame and start a new one
-        IYF_PROFILER_NEXT_FRAME
+        IYFT_PROFILER_NEXT_FRAME
     }
     
     // Write the results to an std::string and std::cout
     // This will automatically stop the recording.
-    std::cout << IYF_PROFILER_RESULT_STRING << "\n";
+    std::cout << IYFT_PROFILER_RESULT_STRING << "\n";
     
     return 0;
 }

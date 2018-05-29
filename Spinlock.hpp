@@ -28,8 +28,8 @@
 
 /// \file Spinlock.hpp Contains an an atomic_flag based spinlock.
 
-#ifndef IYF_SPINLOCK_HPP
-#define IYF_SPINLOCK_HPP
+#ifndef IYFT_SPINLOCK_HPP
+#define IYFT_SPINLOCK_HPP
 
 #include <atomic>
 
@@ -57,4 +57,4 @@ private:
 
 }
 
-#endif // IYF_SPINLOCK_HPP
+#endif // IYFT_SPINLOCK_HPP

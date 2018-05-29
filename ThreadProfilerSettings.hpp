@@ -28,27 +28,31 @@
 
 /// \file ThreadProfilerSettings.hpp Contains customizable setting.
 
-#ifndef IYF_THREAD_PROFILER_SETTINGS_HPP
-#define IYF_THREAD_PROFILER_SETTINGS_HPP
+#ifndef IYFT_THREAD_PROFILER_SETTINGS_HPP
+#define IYFT_THREAD_PROFILER_SETTINGS_HPP
 
 namespace iyft {
 
 // The maximum number of threads that the ThreadProfiler will need to track in your 
 // program. Default is 16. Must be >= 1
-//#define IYF_THREAD_PROFILER_MAX_THREAD_COUNT 64
+//#define IYFT_THREAD_PROFILER_MAX_THREAD_COUNT 64
 
 // A custom hashing function. Must return a 32 bit integer and take std::string as the
 // parameter.
-//#define IYF_THREAD_PROFILER_HASH(a) SOME-FUNCTION-HERE
+//#define IYFT_THREAD_PROFILER_HASH(a) SOME-FUNCTION-HERE
 
 // Either define both or none. This allows you to customize the duration type that's
-// used when building the IYF_PROFILER_RESULT_STRING
-//#define IYF_THREAD_TEXT_OUTPUT_DURATION std::chrono::duration<double, std::milli>
-//#define IYF_THREAD_TEXT_OUTPUT_NAME "ms"
+// used when building the IYFT_PROFILER_RESULT_STRING
+//#define IYFT_THREAD_TEXT_OUTPUT_DURATION std::chrono::duration<double, std::milli>
+//#define IYFT_THREAD_TEXT_OUTPUT_NAME "ms"
 
 // I used this to debug some event order issues but you may find other uses for it.
 // Uncomment this to tag recorded events with monotonically increasing 64 bit integers.
-//#define IYF_PROFILER_WITH_COOKIE
+//#define IYFT_PROFILER_WITH_COOKIE
+
+// If this is macro is defined, and the Dear Imgui library (from https://github.com/ocornut/imgui)
+// is included in your project, you'll be able to draw ProfilerResults by calling drawInImGui.
+//#define IYFT_PROFILER_WITH_IMGUI
 
 /// \brief A list of tags that identify a group of profiled scopes.
 ///
@@ -77,9 +81,9 @@ const char* GetTagName(ProfilerTag tag);
 ScopeColor GetTagColor(ProfilerTag tag);
 }
 
-#endif // IYF_THREAD_PROFILER_SETTINGS_HPP
+#endif // IYFT_THREAD_PROFILER_SETTINGS_HPP
 
-#if defined IYF_THREAD_PROFILER_IMPLEMENTATION && !defined IYF_THREAD_PROFILER_IMPLEMENTATION_INCLUDED
+#if defined IYFT_THREAD_PROFILER_IMPLEMENTATION && !defined IYFT_THREAD_PROFILER_IMPLEMENTATION_INCLUDED
 
 namespace iyft {
 const char* GetTagName(ProfilerTag tag) {
@@ -89,7 +93,6 @@ const char* GetTagName(ProfilerTag tag) {
         return "Untagged";
     }
     
-    IYF_ASSERT(0);
     return "ERROR-INVALID-VALUE";
 }
 
@@ -100,9 +103,8 @@ ScopeColor GetTagColor(ProfilerTag tag) {
         return ScopeColor(255, 255, 255, 255);
     }
     
-    IYF_ASSERT(0);
     return ScopeColor(0, 0, 0, 255);
 }
 }
 
-#endif // defined IYF_THREAD_PROFILER_IMPLEMENTATION && !defined IYF_THREAD_PROFILER_IMPLEMENTATION_INCLUDED
+#endif // defined IYFT_THREAD_PROFILER_IMPLEMENTATION && !defined IYFT_THREAD_PROFILER_IMPLEMENTATION_INCLUDED

@@ -30,7 +30,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSCV")
 # TODO I barely know anything about MSVC. what should I do here?
 endif()
 
-add_definitions("-DIYF_ENABLE_PROFILING -DIYF_THREAD_POOL_PROFILE")
+add_definitions("-DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE")
 find_package(Threads REQUIRED)
 
 add_executable(threadPoolTest Test.cpp Implementation.cpp)

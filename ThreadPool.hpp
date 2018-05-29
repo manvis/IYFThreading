@@ -28,8 +28,8 @@
 
 /// \file ThreadPool.hpp Contains the main ThreadPool class
 
-#ifndef IYF_THREAD_POOL_HPP
-#define IYF_THREAD_POOL_HPP
+#ifndef IYFT_THREAD_POOL_HPP
+#define IYFT_THREAD_POOL_HPP
 
 #include <functional>
 #include <thread>
@@ -39,9 +39,9 @@
 #include <queue>
 #include <iostream>
 
-#ifdef IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
 #include "ThreadProfiler.hpp"
-#endif // IYF_THREAD_POOL_PROFILE
+#endif // IYFT_THREAD_POOL_PROFILE
 
 /// \brief The main namespace of the IYFThreading library
 namespace iyft {
@@ -123,25 +123,35 @@ public:
     /// etc. (e.g., by using pthread_self() and pthread_setschedparam()).
     ///
     /// Moreover, you can use the function to assign names to the threads by using
-    /// IYF_PROFILER_NAME_THREAD(x).
+    /// IYFT_PROFILER_NAME_THREAD(x).
     using SetupFunction = std::function<void(std::size_t, std::size_t)>;
     
-    /// \brief Creates a ThreadPool with std::thread::hardware_concurrency() workers.
+    /// \brief Creates a ThreadPool with std::thread::hardware_concurrency() - 1 workers.
+    ///
+    /// std::thread::hardware_concurrency() - 1 is used because the main thread that
+    /// creates the pool is also a thread and will likely keep doing work as well.
+    ///
+    /// \remark If std::thread::hardware_concurrency() <= 1, the pool will be instantiated
+    /// with a single worker.
     ///
     /// \param setupFunction An optional function that can be used to setup the
     /// threads (e.g., set priorities and/or core affinities using native handles,
     /// set custom thread names, etc.).
     inline ThreadPool(SetupFunction setupFunction = &DefaultSetupFunction)
-        : ThreadPool(std::thread::hardware_concurrency(), setupFunction) {}
+        : ThreadPool(DetermineWorkerCount(std::thread::hardware_concurrency()), setupFunction) {}
     
     /// \brief Creates a ThreadPool with the specified number of workers.
     ///
-    /// \param workerCount The number of workers to create.
+    /// \param workerCount The number of workers to create. Must be > 0
     /// \param setupFunction An optional function that can be used to setup the
     /// threads (e.g., set priorities and/or core affinities using native handles,
     /// set custom thread names, etc.).
     inline ThreadPool(std::size_t workerCount, SetupFunction setupFunction = &DefaultSetupFunction)
         : tasksInFlight(0), running(true) {
+        if (workerCount == 0) {
+            throw std::logic_error("workerCount must be > 0");
+        }
+        
         workers.reserve(workerCount);
         
         for (std::size_t i = 0; i < workerCount; ++i) {
@@ -195,9 +205,9 @@ public:
     /// \brief Adds a task that returns nothing.
     template<typename F, typename... Args>
     inline void addTask(F&& f, Args&&... args) {
-#ifdef IYF_THREAD_POOL_PROFILE
-        IYF_PROFILE(AddTaskNoResultNoBarrier);
-#endif // IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
+        IYFT_PROFILE(AddTaskNoResultNoBarrier);
+#endif // IYFT_THREAD_POOL_PROFILE
 
         {
             std::lock_guard<std::mutex> lock(taskMutex);
@@ -219,9 +229,9 @@ public:
     /// completion.
     template<typename F, typename... Args>
     inline void addTask(Barrier& barrier, F&& f, Args&&... args) {
-#ifdef IYF_THREAD_POOL_PROFILE
-        IYF_PROFILE(AddTaskNoResultWithBarrier);
-#endif // IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
+        IYFT_PROFILE(AddTaskNoResultWithBarrier);
+#endif // IYFT_THREAD_POOL_PROFILE
         {
             std::lock_guard<std::mutex> lock(taskMutex);
             
@@ -240,9 +250,9 @@ public:
     /// \brief Adds a task that returns a future.
     template<typename F, typename... Args>
     std::future<std::invoke_result_t<F, Args...>> addTaskWithResult(F&& f, Args&&... args) {
-#ifdef IYF_THREAD_POOL_PROFILE
-        IYF_PROFILE(AddTaskWithResultNoBarrier);
-#endif // IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
+        IYFT_PROFILE(AddTaskWithResultNoBarrier);
+#endif // IYFT_THREAD_POOL_PROFILE
 
         using ReturnValueType = std::invoke_result_t<F, Args...>;
         using TaskType = std::packaged_task<ReturnValueType()>;
@@ -268,9 +278,9 @@ public:
     /// completion.
     template<typename F, typename... Args>
     std::future<std::invoke_result_t<F, Args...>> addTaskWithResult(Barrier& barrier, F&& f, Args&&... args) {
-#ifdef IYF_THREAD_POOL_PROFILE
-        IYF_PROFILE(AddTaskWithResultWithBarrier);
-#endif // IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
+        IYFT_PROFILE(AddTaskWithResultWithBarrier);
+#endif // IYFT_THREAD_POOL_PROFILE
         using ReturnValueType = std::invoke_result_t<F, Args...>;
         using TaskType = std::packaged_task<ReturnValueType()>;
         
@@ -300,6 +310,14 @@ public:
         }
     }
 private:
+    static std::size_t DetermineWorkerCount(std::size_t i) {
+        if (i <= 1) {
+            return 1;
+        } else {
+            return i - 1;
+        }
+    }
+    
     /// \brief Used to check for an invalid state.
     inline void checkRunning() const {
         if (!running) {
@@ -312,21 +330,21 @@ private:
     void executeTasks(std::size_t count, std::size_t current, SetupFunction setup) {
         setup(count, current);
         
-#ifdef IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
         // Create an ID and a name for this thread. This will do nothing if the user
         // has already set the name in the setup function.
         const std::string name = "PoolWorker" + std::to_string(current);
         iyft::AssignThreadName(name.c_str());
-#endif // IYF_THREAD_POOL_PROFILE
+#endif // IYFT_THREAD_POOL_PROFILE
         
         // Don't quit until the destructor tells us to
         while (true) {
             std::packaged_task<void()> activeTask;
             
             {   
-#ifdef IYF_THREAD_POOL_PROFILE
-                IYF_PROFILE(SleepAndAcquireTask)
-#endif // IYF_THREAD_POOL_PROFILE
+#ifdef IYFT_THREAD_POOL_PROFILE
+                IYFT_PROFILE(SleepAndAcquireTask)
+#endif // IYFT_THREAD_POOL_PROFILE
                 std::unique_lock<std::mutex> lock(taskMutex);
                 
                 newTaskNotifier.wait(lock, [this](){
@@ -379,4 +397,4 @@ private:
 
 }
 
-#endif // IYF_THREAD_POOL_HPP
+#endif // IYFT_THREAD_POOL_HPP
