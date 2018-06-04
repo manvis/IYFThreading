@@ -357,8 +357,4 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::InsertScopeInfo(\
 
 #endif // IYFT_THREAD_PROFILER_HPP
 
-#ifdef IYFT_THREAD_PROFILER_IMPLEMENTATION
-#include "ThreadProfilerCore.hpp"
-#endif // IYFT_THREAD_PROFILER_IMPLEMENTATION
-
 

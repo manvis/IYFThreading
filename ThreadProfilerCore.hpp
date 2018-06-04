@@ -188,6 +188,8 @@ public:
     TimedProfilerObject(std::chrono::nanoseconds start) 
         : start(start) {}
     
+    virtual ~TimedProfilerObject() = default;
+    
     /// \brief Returns the start time as a duration since the clock's epoch.
     ///
     /// \return The start time as a duration since the clock's epoch.
@@ -379,13 +381,13 @@ public:
         
         threadData.depth++;
         
-        if (isRecording()) {
+//         if (isRecording()) {
             threadData.activeStack.emplace_back(key, threadData.depth, ProfilerClock::now().time_since_epoch());
-        } else {
-            // Don't even call the clock
-            threadData.activeStack.emplace_back(key, threadData.depth, ProfilerClock::time_point().time_since_epoch());
-        }
-        
+//         } else {
+//             // Don't even call the clock
+//             threadData.activeStack.emplace_back(key, threadData.depth, ProfilerClock::time_point().time_since_epoch());
+//         }
+//         
 #ifdef IYFT_PROFILER_WITH_COOKIE
         threadData.activeStack.back().setCookie(threadData.cookie);
         threadData.cookie++;
@@ -510,48 +512,340 @@ private:
 /// Returns a reference to the default ThreadProfiler instance
 ThreadProfiler& GetThreadProfiler();
 
+/// \brief A minimal interval tree used for windowing queries.
+///
+/// This is based on https://www.cs.princeton.edu/~rs/talks/LLRB/LLRB.pdf
+/// and https://en.wikipedia.org/wiki/Interval_tree#Augmented_tree
+template <typename T>
+class InsertOnlyIntervalTree {
+public:
+    using IntervalType = typename T::IntervalType;
+    
+    InsertOnlyIntervalTree(std::size_t maxNodes) : root(nullptr), maxNodes(maxNodes) {
+        nodes.reserve(maxNodes);
+    }
+    
+    std::string print() const;
+    
+    void findIntervals(const T& searchInterval, std::vector<T>& intervals) const {
+        findIntervals(root, searchInterval, intervals);
+    }
+    
+    std::size_t size() const {
+        return nodes.size();
+    }
+    
+    void updateMaximumValues() {
+        updateMaximumValues(root);
+    }
+    
+    void insert(const T& item) {
+        root = insert(root, item);
+        root->isRed = false;
+    }
+private:
+    struct Node {
+        inline Node(T item) : left(nullptr), right(nullptr), sibling(nullptr),  item(item), maximum(), isRed(true) {}
+        
+        Node* left;
+        Node* right;
+        Node* sibling;
+        T item;
+        IntervalType maximum;
+        bool isRed;
+    };
+    
+    void findIntervals(const Node* node, const T& searchInterval, std::vector<T>& intervals) const {
+        if (node == nullptr) {
+            return;
+        }
+        
+        if (searchInterval.getStart() > node->maximum) {
+            return;
+        }
+        
+        if (node->left != nullptr) {
+            findIntervals(node->left, searchInterval, intervals);
+        }
+        
+        const Node* currentNode = node;
+        while (currentNode != nullptr) {
+            if (overlapsWith(currentNode->item, searchInterval)) {
+                intervals.push_back(currentNode->item);
+            }
+            
+            currentNode = currentNode->sibling;
+        }
+        
+        if (searchInterval.getEnd() < node->item.getStart()) {
+            return;
+        }
+        
+        if (node->right != nullptr) {
+            findIntervals(node->right, searchInterval, intervals);
+        }
+    }
+    
+    inline bool overlapsWith(const T& a, const T& b) const {
+        return a.getStart() <= b.getEnd() && b.getStart() <= a.getEnd();
+    }
+    
+    inline bool isRed(Node* h) const {
+        if (h != nullptr) {
+            return h->isRed;
+        } else {
+            return false;
+        }
+    }
+    
+    inline Node* insert(Node* h, const T& item) {
+        if (h == nullptr) {
+            return newNode(item);
+        }
+        
+        if (isRed(h->left) && isRed(h->right)) {
+            flipColors(h);
+        }
+        
+        if (item == h->item) {
+            Node* listItem = h;
+            while (listItem->sibling != nullptr) {
+                listItem = listItem->sibling;
+            }
+            
+            listItem->sibling = newNode(item);
+        } else if (item < h->item) {
+            h->left = insert(h->left, item);
+        } else {
+            h->right = insert(h->right, item);
+        }
+        
+        if (isRed(h->right) && !(isRed(h->left))) {
+            h = rotateLeft(h);
+        }
+        
+        if (isRed(h->left) && isRed(h->left->left)) {
+            h = rotateRight(h);
+        }
+        
+        return h;
+    }
+    
+    inline Node* newNode(const T& item) {
+        if (nodes.size() + 1 > maxNodes) {
+            throw std::length_error("Can't insert more than maxNodes nodes");
+        }
+        
+        nodes.emplace_back(item);
+        return &nodes.back();
+    }
+    
+    inline void flipColors(Node* h) {
+        h->isRed = !h->isRed;
+        h->left->isRed = !h->left->isRed;
+        h->right->isRed = !h->right->isRed;
+    }
+    
+    inline Node* rotateLeft(Node* h) {
+        Node* temp = h->right;
+        h->right = temp->left;
+        temp->left = h;
+        temp->isRed = h->isRed;
+        h->isRed = true;
+        return temp;
+    }
+    
+    inline Node* rotateRight(Node* h) {
+        Node* temp = h->left;
+        h->left= temp->right;
+        temp->right= h;
+        temp->isRed = h->isRed;
+        h->isRed = true;
+        return temp;
+    }
+    
+    void printTreePreOrder(std::stringstream& ss, const Node* node, std::size_t depth) const;
+    
+    inline IntervalType getMaximumSelf(const Node* node) const {
+        IntervalType selfMax = node->item.getEnd();
+        
+        const Node* listItem = node->sibling;
+        while (listItem != nullptr) {
+            selfMax = std::max(selfMax, listItem->item.getEnd());
+            
+            listItem = listItem->sibling;
+        }
+        
+        return selfMax;
+    }
+    
+    IntervalType updateMaximumValues(Node* node) {
+        if (node == nullptr) {
+            return IntervalType();
+        }
+        
+        const IntervalType self = getMaximumSelf(node);
+        const IntervalType left = updateMaximumValues(node->left);
+        const IntervalType right = updateMaximumValues(node->right);
+        
+        const IntervalType maximum = std::max(std::max(self, left), right);
+        node->maximum = maximum;
+        return maximum;
+    }
+    
+    Node* root;
+    std::size_t maxNodes;
+    std::vector<Node> nodes;
+};
+
+/// \brief A record of a tag name and color.
+///
+/// We need to store this because the end users will use different thread 
+/// profiler settings.
+class TagNameAndColor {
+public:
+    /// \brief Constructs an empty TagNameAndColor object.
+    TagNameAndColor() 
+        : name(GetTagName(ProfilerTag::NoTag)), color(GetTagColor(ProfilerTag::NoTag)) {}
+    
+    /// \brief Constructs a TagNameAndColor object using explicit values.
+    TagNameAndColor(std::string name, ScopeColor color) : name(name), color(color) {}
+
+    /// Returns the name of the tag.
+    ///
+    /// \return The name of the tag.
+    inline const std::string& getName() const {
+        return name;
+    }
+    
+    /// Returns the color of the tag.
+    ///
+    /// \return The color of the tag.
+    inline const ScopeColor& getColor() const {
+        return color;
+    }
+    
+    /// \brief A comparison operator.
+    inline friend bool operator==(const TagNameAndColor& a, const TagNameAndColor& b) {
+        return (a.name == b.name) && (a.color == b.color);
+    }
+private:
+    /// \brief The name of the tag.
+    std::string name;
+    
+    /// \brief The color of the tag.
+    ScopeColor color;
+};
+
+/// \brief Possible results of the drawInImGui() function
+enum class ProfilerDrawResult {
+    DrawnSuccessfully, ///< Contents of this ProfilerResults object were drawn successfully
+    DrawingFailed, ///< An error message was drawn
+    ImGuiNotAvailable, ///< The profiler was built without IYFT_PROFILER_WITH_IMGUI and drawing is not available
+};
+
+#ifdef IYFT_PROFILER_WITH_IMGUI
+class ProfilerResults;
+
+class ProfilerResultDrawData {
+public:
+    ProfilerResultDrawData(const ProfilerResults* results);
+    ProfilerDrawResult draw(float scale);
+private:
+    const ProfilerResults* results;
+    
+    struct FullEventData {
+        using IntervalType = std::chrono::nanoseconds;
+        
+        FullEventData(std::size_t id, const TimedProfilerObject* event, const ScopeInfo* scope, const TagNameAndColor* nameAndColor)
+            : id(id), event(event), scope(scope), nameAndColor(nameAndColor) {}
+        
+        inline friend bool operator<(const FullEventData& a, const FullEventData& b) {
+            return a.event->getStart() < b.event->getStart();
+        }
+        
+        inline friend bool operator==(const FullEventData& a, const FullEventData& b) {
+            return a.event->getStart() == b.event->getStart();
+        }
+        
+        void print(std::stringstream& ss) const;
+        
+        inline std::chrono::nanoseconds getStart() const {
+            return event->getStart();
+        }
+        
+        inline std::chrono::nanoseconds getEnd() const {
+            return event->getEnd();
+        }
+        
+        const std::size_t id;
+        const TimedProfilerObject* event;
+        const ScopeInfo* scope;
+        const TagNameAndColor* nameAndColor;
+    };
+    
+    enum class ValidationStatus {
+        Validated,
+        Invalid,
+        Pending
+    };
+    
+    struct ScopeStats {
+        inline constexpr ScopeStats() 
+            : totalCalls(0), averageCallDuration(), minCallDuration(), shortestFrameNumber(0), maxCallDuration(), longestFrameNumber(0) {}
+        
+        std::uint64_t totalCalls;
+        std::chrono::duration<float, std::milli> averageCallDuration;
+        
+        std::chrono::duration<float, std::milli> minCallDuration;
+        std::uint64_t shortestFrameNumber;
+        
+        std::chrono::duration<float, std::milli> maxCallDuration;
+        std::uint64_t longestFrameNumber;
+    };
+    
+    struct FullScopeData {
+        FullScopeData(const ScopeInfo* scopeInfo, const TagNameAndColor* tagInfo, const ScopeStats* stats)
+            : scopeInfo(scopeInfo), tagInfo(tagInfo), stats(stats) {}
+        
+        const ScopeInfo* scopeInfo;
+        const TagNameAndColor* tagInfo;
+        const ScopeStats* stats;
+    };
+    
+    void drawScopeInfoColumnName(const char* name, std::vector<FullScopeData>& sortedScopes,
+                            bool (*const ascendingSort)(const FullScopeData& a, const FullScopeData& b),
+                            bool (*const descendingSort)(const FullScopeData& a, const FullScopeData& b));
+    
+    ValidationStatus validationStatus;
+    float scrollPercentage;
+    float lastScale;
+    float shortestFrameDuration;
+    float longestFrameDuration;
+    float splitterHeight;
+    bool lastClickedItemWasFrame;
+    std::size_t lastClickedItemID;
+    std::size_t threadWithSelectedItem;
+    std::string errorMessage;
+    std::vector<std::int32_t> maxDepths;
+    
+    std::unordered_map<ScopeKey, ScopeStats> scopeStats;
+    std::vector<InsertOnlyIntervalTree<FullEventData>> intervalTrees;
+    std::vector<FullEventData> drawnIntervals;
+    std::vector<FullScopeData> sortedScopes;
+    
+    ImVec2 hoveredItemCoordinates;
+    static constexpr std::size_t TextBufferSize = 512;
+    std::array<char, TextBufferSize> primaryTextBuffer;
+    std::array<char, TextBufferSize> secondaryTextBuffer;
+    std::array<char, TextBufferSize> filterTextBuffer;
+};
+
+#endif // IYFT_PROFILER_WITH_IMGUI
+
 /// \brief Contains results that were recorded by the ThreadProfiler.
 class ProfilerResults {
 public:
-    /// \brief A record of a tag name and color.
-    ///
-    /// We need to store this because the end users will use different thread 
-    /// profiler settings.
-    class TagNameAndColor {
-    public:
-        /// \brief Constructs an empty TagNameAndColor object.
-        TagNameAndColor() 
-            : name(GetTagName(ProfilerTag::NoTag)), color(GetTagColor(ProfilerTag::NoTag)) {}
-        
-        /// \brief Constructs a TagNameAndColor object using explicit values.
-        TagNameAndColor(std::string name, ScopeColor color) : name(name), color(color) {}
-
-        /// Returns the name of the tag.
-        ///
-        /// \return The name of the tag.
-        inline const std::string& getName() const {
-            return name;
-        }
-        
-        /// Returns the color of the tag.
-        ///
-        /// \return The color of the tag.
-        inline const ScopeColor& getColor() const {
-            return color;
-        }
-        
-        /// \brief A comparison operator.
-        inline friend bool operator==(const TagNameAndColor& a, const TagNameAndColor& b) {
-            return (a.name == b.name) && (a.color == b.color);
-        }
-    private:
-        /// \brief The name of the tag.
-        std::string name;
-        
-        /// \brief The color of the tag.
-        ScopeColor color;
-    };
-    
     /// \brief A comparison operator.
     inline friend bool operator==(const ProfilerResults& a, const ProfilerResults& b) {
         return (a.frames == b.frames) &&
@@ -590,6 +884,8 @@ public:
     }
     
     /// \brief Access the RecordedEvent container.
+    ///
+    /// \param threadID The ID of the thread. Must be less than getThreadCount()
     const std::deque<RecordedEvent>& getEvents(std::size_t threadID) const {
         return events[threadID];
     }
@@ -600,7 +896,7 @@ public:
     }
     
     /// \brief Access the tag data container.
-    const std::unordered_map<std::uint32_t, TagNameAndColor> getTags() const {
+    const std::unordered_map<std::uint32_t, TagNameAndColor>& getTags() const {
         return tags;
     }
     
@@ -626,31 +922,37 @@ public:
         return anyRecords;
     }
     
-#ifdef IYFT_PROFILER_WITH_IMGUI
     /// \brief Draws the results in Imgui
+    ProfilerDrawResult drawInImGui(float scale);
+    
+    /// \brief Returns the number of threads that were profiled
+    std::size_t getThreadCount() const {
+        return threadNames.size();
+    }
+    
+    /// \brief Returns the name of a profiled thread
     ///
-    /// \return true if data was drawn, false if an error message was drawn (e.g., data was
-    /// incomplete or invalid)
-    bool drawInImGui(float scale);
-#endif // IYFT_PROFILER_WITH_IMGUI
+    /// \param threadID The ID of the thread. Must be less than getThreadCount()
+    const std::string& getThreadName(std::size_t threadID) const {
+        return threadNames[threadID];
+    }
+    
+    /// \brief Minimal value that can be passed to drawInImGui()
+    static float GetMinScale() {
+        return 0.2f;
+    }
+    
+    /// \brief Maximum value that can be passed to drawInImGui()
+    static float GetMaxScale() {
+        return 15.0f;
+    }
 private:
     friend class ThreadProfiler;
     
     /// The default constructed state isn't valid. It needs to be processed by the
     /// ThreadProfiler.
     ProfilerResults() 
-        : frameDataMissing(false), anyRecords(false), withCookie(false)
-#ifdef IYFT_PROFILER_WITH_IMGUI
-        , validationStatus(ValidationStatus::Pending),
-          scrollPercentage(0.0f),
-          lastScale(1.0f),
-          lastClickedItemWasFrame(true),
-          lastClickedItemID(0),
-          threadWithSelectedItem(0),
-          primaryTextBuffer(),
-          secondaryTextBuffer()
-#endif // IYFT_PROFILER_WITH_IMGUI
-        {}
+        : frameDataMissing(false), anyRecords(false), withCookie(false) {}
     
     std::deque<FrameData> frames;
     std::unordered_map<ScopeKey, ScopeInfo> scopes;
@@ -660,27 +962,9 @@ private:
     bool frameDataMissing;
     bool anyRecords;
     bool withCookie;
+    
 #ifdef IYFT_PROFILER_WITH_IMGUI
-    enum class ValidationStatus {
-        Validated,
-        Invalid,
-        Pending
-    };
-    
-    ValidationStatus validationStatus;
-    float scrollPercentage;
-    float lastScale;
-    bool lastClickedItemWasFrame;
-    std::size_t lastClickedItemID;
-    std::size_t threadWithSelectedItem;
-    bool validateForDrawing();
-    std::string errorMessage;
-    std::vector<std::int32_t> maxDepths;
-    
-    ImVec2 hoveredItemCoordinates;
-    static constexpr std::size_t TextBufferSize = 1024;
-    std::array<char, TextBufferSize> primaryTextBuffer;
-    std::array<char, TextBufferSize> secondaryTextBuffer;
+    std::unique_ptr<ProfilerResultDrawData> drawData;
 #endif // IYFT_PROFILER_WITH_IMGUI
 }; 
 
@@ -701,7 +985,7 @@ private:
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-
+#include <sstream>
 
 using namespace std::chrono_literals;
 
@@ -849,7 +1133,7 @@ ProfilerResults ThreadProfiler::getResults() {
     const std::uint32_t tagEnd = static_cast<std::uint32_t>(ProfilerTag::COUNT);
     for (std::uint32_t i = tagStart; i < tagEnd; ++i) {
         const ProfilerTag tag = static_cast<ProfilerTag>(i);
-        ProfilerResults::TagNameAndColor nameAndColor(GetTagName(tag), GetTagColor(tag));
+        TagNameAndColor nameAndColor(GetTagName(tag), GetTagColor(tag));
         
         results.tags.emplace(i, std::move(nameAndColor));
     }
@@ -1071,7 +1355,8 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
             threadData.emplace_back(std::move(event));
         }
     }
-    return pr;
+    
+    return std::make_optional<ProfilerResults>(std::move(pr));
 }
 
 inline static void WriteUInt64(std::ostream& os, std::uint64_t num) {
@@ -1255,50 +1540,6 @@ inline ProfilerItemStatus operator&(ProfilerItemStatus a, ProfilerItemStatus b) 
     return static_cast<ProfilerItemStatus>(static_cast<unsigned int>(a) & static_cast<unsigned int>(b));
 }
 
-bool ProfilerResults::validateForDrawing() {
-    if (validationStatus == ValidationStatus::Validated) {
-        return true;
-    } else if (validationStatus == ValidationStatus::Invalid) {
-        return false;
-    }
-    
-    if (!anyRecords) {
-        errorMessage = "No necords. Did you instrument the code and start the recording?";
-        validationStatus = ValidationStatus::Invalid;
-        return false;
-    }
-    
-    if (frames.size() > 1) {
-        auto iter = frames.begin();
-        std::uint64_t lastFrameNumber = iter->getNumber();
-        iter++;
-        
-        for (; iter != frames.end(); iter++) {
-            const std::uint64_t currentFrameNumber = iter->getNumber();
-            if (currentFrameNumber != (lastFrameNumber + 1)) {
-                errorMessage = "The recorded frames are not sequential.";
-                validationStatus = ValidationStatus::Invalid;
-                return false;
-            }
-            
-            lastFrameNumber++;
-        }
-    }
-    
-    maxDepths.resize(events.size(), 0);
-    for (std::size_t e = 0; e < events.size(); ++e) {
-        const std::deque<RecordedEvent>& records = events[e];
-        
-        for (const RecordedEvent& r : records) {
-            maxDepths[e] = std::max(maxDepths[e], r.getDepth());
-        }
-    }
-    
-    errorMessage = "";
-    validationStatus = ValidationStatus::Validated;
-    return true;
-}
-
 constexpr float MIN_PIXELS_PER_MS = 150.0f;
 constexpr float PADDING = 5.0f;
 
@@ -1398,16 +1639,280 @@ inline static void DisplayTimingData(const TimedProfilerObject& timedObject, std
     ImGui::Text("Start: %fms\nEnd: %fms\nDuration: %fms", startMs, endMs, durationMs);
 }
 
-bool ProfilerResults::drawInImGui(float scale) {
-    ImGui::BeginChild("ProfilerWrapper");
-    ImGui::BeginChild("ProfilerMainContent", ImVec2(0, 400), false, ImGuiWindowFlags_HorizontalScrollbar);
+inline static std::uint64_t ComputeFrameNumber(const std::deque<FrameData>& frames, std::chrono::nanoseconds value, std::uint64_t firstFrameNumber) {
+    auto frameResult = std::lower_bound(frames.begin(), frames.end(), value, [](const FrameData& lhs, const std::chrono::nanoseconds& rhs){
+        return lhs.getEnd() < rhs;
+    });
     
-    if (!validateForDrawing()) {
-        ImGui::Text("Profiler results are invalid. ERROR:%s", errorMessage.c_str());
-        return false;
+    if (frameResult == frames.end()) {
+        return frames.begin()->getNumber() - firstFrameNumber;
+    } else {
+        return frameResult->getNumber() - firstFrameNumber;
+    }
+}
+
+template <typename T>
+std::string InsertOnlyIntervalTree<T>::print() const {
+    std::stringstream ss;
+    printTreePreOrder(ss, root, 0);
+    return ss.str();
+}
+
+template <typename T>
+void InsertOnlyIntervalTree<T>::printTreePreOrder(std::stringstream& ss, const Node* node, std::size_t depth) const {
+    if (node == nullptr) {
+        return;
     }
     
-    scale = std::clamp(scale, 1.0f, 10.0f);
+    const std::string offsetString(depth, ' ');
+    
+    ss << offsetString;
+    node->item.print(ss);
+    ss << " MAX: " << node->maximum.count();
+    
+    if (node->sibling != nullptr) {
+        ss << "; SIBLINGS: ";
+        
+        const Node* listItem = node->sibling;
+        while (listItem != nullptr) {
+            listItem->item.print(ss);
+            
+            listItem = listItem->sibling;
+            if (listItem != nullptr) {
+                ss << ", ";
+            }
+        }
+    }
+    
+    ss << "\n";
+    
+    const std::size_t currentDepth = ++depth;
+    
+    printTreePreOrder(ss, node->left, currentDepth);
+    printTreePreOrder(ss, node->right, currentDepth);
+}
+
+void ProfilerResultDrawData::drawScopeInfoColumnName(const char* name, std::vector<FullScopeData>& sortedScopes,
+                                                     bool (*const ascendingSort)(const FullScopeData& a, const FullScopeData& b),
+                                                     bool (*const descendingSort)(const FullScopeData& a, const FullScopeData& b)) {
+    ImGui::PushID(ImGui::GetColumnIndex());
+    if (ImGui::ArrowButton("Up", ImGuiDir_Up)) {
+        std::sort(sortedScopes.begin(), sortedScopes.end(), ascendingSort);
+    }
+    
+    ImGui::SameLine();
+    
+    if (ImGui::ArrowButton("Down", ImGuiDir_Down)) {
+        std::sort(sortedScopes.begin(), sortedScopes.end(), descendingSort);
+    }
+    ImGui::PopID();
+    
+    ImGui::SameLine();
+    
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", name);
+}
+
+ProfilerResultDrawData::ProfilerResultDrawData(const ProfilerResults* results) 
+    : results(results),
+      validationStatus(ValidationStatus::Pending),
+      scrollPercentage(0.0f),
+      lastScale(1.0f),
+      shortestFrameDuration(FLT_MAX),
+      longestFrameDuration(0.0f),
+      splitterHeight(250.0f),
+      lastClickedItemWasFrame(true),
+      lastClickedItemID(0),
+      threadWithSelectedItem(0),
+      primaryTextBuffer(),
+      secondaryTextBuffer(),
+      filterTextBuffer()
+{
+    if (!results->hasAnyRecords()) {
+        errorMessage = "No necords. Did you instrument the code and start the recording?";
+        validationStatus = ValidationStatus::Invalid;
+        
+        return;
+    }
+    
+    const std::deque<FrameData>& frames = results->getFrames();
+    if (frames.size() > 1) {
+        auto iter = frames.begin();
+        std::uint64_t lastFrameNumber = iter->getNumber();
+        iter++;
+        
+        for (; iter != frames.end(); iter++) {
+            const std::uint64_t currentFrameNumber = iter->getNumber();
+            if (currentFrameNumber != (lastFrameNumber + 1)) {
+                errorMessage = "The recorded frames are not sequential.";
+                validationStatus = ValidationStatus::Invalid;
+                
+                return;
+            }
+            
+            const float currentFrameDuration = std::chrono::duration<float, std::milli>(iter->getDuration()).count();
+            shortestFrameDuration = std::min(shortestFrameDuration, currentFrameDuration);
+            longestFrameDuration = std::max(longestFrameDuration, currentFrameDuration);
+            
+            lastFrameNumber++;
+        }
+    } else if (frames.size() == 1) {
+        const float currentFrameDuration = std::chrono::duration<float, std::milli>(frames[0].getDuration()).count();
+        shortestFrameDuration = currentFrameDuration;
+        longestFrameDuration = currentFrameDuration;
+    } else {
+        errorMessage = "No frames were recorded.";
+        validationStatus = ValidationStatus::Invalid;
+        
+        
+        return;
+    }
+    
+    const std::size_t threadCount = results->getThreadCount();
+    
+    maxDepths.resize(threadCount, 0);
+    for (std::size_t e = 0; e < threadCount; ++e) {
+        const std::deque<RecordedEvent>& records = results->getEvents(e);
+        
+        for (const RecordedEvent& r : records) {
+            maxDepths[e] = std::max(maxDepths[e], r.getDepth());
+        }
+    }
+    
+    const std::unordered_map<ScopeKey, ScopeInfo>& scopes = results->getScopes();
+    const std::unordered_map<std::uint32_t, TagNameAndColor>& tags = results->getTags();
+    
+    intervalTrees.reserve(threadCount);
+    for (std::size_t i = 0; i < threadCount; ++i) {
+        const std::deque<RecordedEvent>& records = results->getEvents(i);
+        
+        intervalTrees.emplace_back(records.size());
+        InsertOnlyIntervalTree<FullEventData>& currentTree = intervalTrees.back();
+        
+        auto eventIter = records.begin();
+        for (std::size_t j = 0; j < records.size(); ++j) {
+            const RecordedEvent& e = *eventIter;
+            eventIter++;
+            
+//             if (!e.isValid() || !e.isComplete()) {
+//                 continue;
+//             }
+            
+            auto scopeResult = scopes.find(e.getKey());
+            if (scopeResult == scopes.end()) {
+                errorMessage = "Missing scope information.";
+                validationStatus = ValidationStatus::Invalid;
+                
+                return;
+            }
+            
+            const ScopeInfo& scope = scopeResult->second;
+            
+            auto tagResult = tags.find(static_cast<std::uint32_t>(scope.getTag()));
+            if (tagResult == tags.end()) {
+                errorMessage = "Missing tag information.";
+                validationStatus = ValidationStatus::Invalid;
+                
+                return;
+            }
+            
+            const TagNameAndColor& tagInfo = tagResult->second;
+            
+            currentTree.insert(FullEventData(j, &e, &scope, &tagInfo));
+            
+// std::uint64_t totalCalls;
+// std::chrono::duration<float, std::milli> averageCallDuration;
+// 
+// std::chrono::duration<float, std::milli> minCallDuration;
+// std::uint64_t shortestFrameNumber;
+// 
+// std::chrono::duration<float, std::milli> maxCallDuration;
+// std::uint64_t longestFrameNumber;
+            // Build the stats
+            
+            std::uint64_t firstFrameNumber = frames.begin()->getNumber();
+            auto statResult = scopeStats.find(e.getKey());
+            if (statResult != scopeStats.end()) {
+                ScopeStats& stats = statResult->second;
+                
+                stats.totalCalls += 1;
+                stats.averageCallDuration += e.getDuration();
+                
+                if (e.getDuration() < stats.minCallDuration) {
+                    stats.minCallDuration = e.getDuration();
+                    stats.shortestFrameNumber = ComputeFrameNumber(frames, e.getStart(), firstFrameNumber);
+                }
+                
+                if (e.getDuration() > stats.maxCallDuration) {
+                    stats.maxCallDuration = e.getDuration();
+                    stats.longestFrameNumber = ComputeFrameNumber(frames, e.getStart(), firstFrameNumber);
+                }
+            } else {
+                ScopeStats stats;
+                
+                stats.totalCalls = 1;
+                stats.averageCallDuration = e.getDuration();
+                
+                const std::uint64_t frameNumber = ComputeFrameNumber(frames, e.getStart(), firstFrameNumber);
+                
+                stats.minCallDuration = e.getDuration();
+                stats.shortestFrameNumber = frameNumber;
+                
+                stats.maxCallDuration = e.getDuration();
+                stats.longestFrameNumber = frameNumber;
+                
+                scopeStats[e.getKey()] = std::move(stats);
+            }
+        }
+        
+        currentTree.updateMaximumValues();
+    }
+    
+    for (auto& s : scopeStats) {
+        s.second.averageCallDuration /= static_cast<float>(s.second.totalCalls);
+    }
+    
+    sortedScopes.reserve(scopes.size());
+    for (const auto& s : scopes) {
+        auto tagResult = tags.find(static_cast<std::uint32_t>(s.second.getTag()));
+        if (tagResult == tags.end()) {
+            errorMessage = "Missing tag information.";
+            validationStatus = ValidationStatus::Invalid;
+            
+            return;
+        }
+        
+        // This will create a default initialized ScopeStats instance if one is missing
+        const ScopeStats& stats = scopeStats[s.first];
+        
+        sortedScopes.emplace_back(&(s.second), &(tagResult->second), &stats);
+    }
+    
+    std::sort(sortedScopes.begin(), sortedScopes.end(), [](const FullScopeData& a, const FullScopeData& b){
+        return a.scopeInfo->getName() < b.scopeInfo->getName();
+    });
+    
+    errorMessage = "";
+    validationStatus = ValidationStatus::Validated;
+}
+    
+ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
+    // Splitter behaviour based on https://github.com/ocornut/imgui/issues/125#issuecomment-135775009
+    
+    ImGui::BeginChild("ProfilerWrapper");
+    if (validationStatus != ValidationStatus::Validated) {
+        ImGui::Text("Profiler results are invalid. ERROR:%s", errorMessage.c_str());
+        
+        ImGui::EndChild();
+        return ProfilerDrawResult::DrawingFailed;
+    }
+    
+//     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,0));
+    ImGui::BeginChild("ProfilerMainContent", ImVec2(0, splitterHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
+    
+    scale = std::clamp(scale, ProfilerResults::GetMinScale(), ProfilerResults::GetMaxScale());
+    
+    const std::deque<FrameData>& frames = results->getFrames();
     
     const ImVec2 position = ImGui::GetWindowPos();
     const ImVec2 size = ImGui::GetWindowSize();
@@ -1420,32 +1925,33 @@ bool ProfilerResults::drawInImGui(float scale) {
     const std::chrono::nanoseconds end = frames.back().getEnd();
     const std::chrono::nanoseconds durationNanos = end - start;
     const float recordDuration = std::chrono::duration<float, std::milli>(durationNanos).count();
-    const std::size_t recordDurationCeil = std::ceil(recordDuration);
+    //const std::size_t recordDurationCeil = std::ceil(recordDuration);
     const float msPerFrame = recordDuration / frameCount;
     const float FPS = 1000.0f / msPerFrame;
     
     // Determine the width of the drawing area.
     const float pixelsPerMs = MIN_PIXELS_PER_MS * scale;
-    const float frameDisplayWidth = recordDurationCeil * pixelsPerMs;
-
-    const ImVec2 parentSize = ImGui::GetContentRegionAvail();
-    const float totalWidth = std::max(frameDisplayWidth, parentSize.x);
+    const float totalWidth = recordDuration * pixelsPerMs;//std::max(frameDisplayWidth, parentSize.x);
+    
     const float lineWithSpacing = ImGui::GetTextLineHeightWithSpacing();
     const float lineWithoutSpacing = ImGui::GetTextLineHeight();
     const float lineSpacing = lineWithSpacing - lineWithoutSpacing;
     
-    const float scrollMax = ImGui::GetScrollMaxX();
+    //const float scrollMax = ImGui::GetScrollMaxX();
     const float scrollCurrent = ImGui::GetScrollX();
-//     if (scale != lastScale) {
-//         lastScale = scale;
-//         ImGui::SetScrollX(totalWidth * scrollPercentage);
-//     } else {
-//         scrollPercentage = scrollCurrent / totalWidth;
-//     }
     
-    ImGui::BeginChild("ScrollingRegion", ImVec2(totalWidth, parentSize.y), true);
+    // TODO FIXME this causes flickering and I can't seem to solve it
+    if (scale != lastScale) {
+        lastScale = scale;
+        ImGui::SetScrollX(totalWidth * scrollPercentage);
+    } else {
+        scrollPercentage = scrollCurrent / totalWidth;
+    }
+    
+    //bool mouseOver = false;
+    ImGui::BeginChild("ScrollingRegion", ImVec2(totalWidth, 0), false);
     ImGui::Text("Frames: %lu. Total time: %.2f ms; %.2f ms/frame (%.2f FPS)", frameCount, recordDuration, msPerFrame, FPS);
-    if (frameDataMissing) {
+    if (results->isFrameDataMissing()) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "(NO FRAME DATA)");
     }
@@ -1457,7 +1963,7 @@ bool ProfilerResults::drawInImGui(float scale) {
     // Since all frames and events are sorted, we can use these values together with a binary search (lower_bound)
     // to clip the ranges extremely quickly.
     const std::int64_t startNanosOffset = static_cast<std::int64_t>(durationNanos.count() * ((clipRect.x - tickDrawStart.x) / totalWidth));
-    const std::int64_t endNanosOffset = static_cast<std::int64_t>(startNanosOffset + durationNanos.count() * (clipRect.z / totalWidth));
+    const std::int64_t endNanosOffset = static_cast<std::int64_t>(durationNanos.count() * ((clipRect.z - tickDrawStart.x) / totalWidth));
     const std::chrono::nanoseconds firstVisibleNanosecond(start + std::chrono::nanoseconds(startNanosOffset));
     const std::chrono::nanoseconds lastVisibleNanosecond(start + std::chrono::nanoseconds(endNanosOffset));
     
@@ -1469,7 +1975,7 @@ bool ProfilerResults::drawInImGui(float scale) {
     
     const std::chrono::milliseconds firstTick = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::nanoseconds(startNanosOffset));
     const std::chrono::milliseconds lastTick = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::nanoseconds(endNanosOffset));
-    for (std::chrono::milliseconds i = firstTick; i < lastTick; ++i) {
+    for (std::chrono::milliseconds i = firstTick; i <= lastTick; ++i) {
         const float tallTickXCoordinate = tickDrawStart.x + (pixelsPerMs * i.count());
         
         const ImVec2 tallTickStart(tallTickXCoordinate, tickDrawStart.y);
@@ -1544,44 +2050,35 @@ bool ProfilerResults::drawInImGui(float scale) {
     const float recordedEventSpacing = lineSpacing;
     
     ProfilerItemStatus allThreadEventStatus = ProfilerItemStatus::NoInteraction;
-    for (std::size_t i = 0; i < threadNames.size(); ++i) {
-        ImGui::Text("%s", threadNames[i].c_str());
-        const std::deque<RecordedEvent>& threadEvents = events[i];
+    for (std::size_t i = 0; i < results->getThreadCount(); ++i) {
+        const std::string& threadName = results->getThreadName(i);
+        ImGui::Text("%s", threadName.c_str());
+        
+        drawnIntervals.clear();
+        
+        TimedProfilerObject checkInterval(firstVisibleNanosecond);
+        checkInterval.setEnd(lastVisibleNanosecond);
+        intervalTrees[i].findIntervals(FullEventData(0, &checkInterval, nullptr, nullptr), drawnIntervals);
         
         const ImVec2 threadRecordDrawStart = ImGui::GetCursorScreenPos();
         const std::int32_t rowCount = maxDepths[i] + 1;
         
-        const auto firstEvent = std::lower_bound(threadEvents.begin(), threadEvents.end(), firstVisibleNanosecond, [](const RecordedEvent& lhs, const std::chrono::nanoseconds& rhs){
-            return lhs.getEnd() < rhs;
-        });
-        
-        const auto lastEvent = std::lower_bound(threadEvents.begin(), threadEvents.end(), lastVisibleNanosecond, [](const RecordedEvent& lhs, const std::chrono::nanoseconds& rhs){
-            return lhs.getStart() < rhs;
-        });
-        
         ProfilerItemStatus eventStatus = ProfilerItemStatus::NoInteraction;
-        for (auto iter = firstEvent; iter != lastEvent;) {
-            const RecordedEvent& event = *iter;
+        
+        for (const FullEventData& e : drawnIntervals) {
+            const RecordedEvent* event = dynamic_cast<const RecordedEvent*>(e.event);
+            const ScopeInfo* scope = e.scope;
+            const TagNameAndColor* nameAndColor = e.nameAndColor;
+            const std::size_t itemID = e.id;
             
-            const float eventStartMs = std::chrono::duration<float, std::milli>(event.getStart() - start).count();
-            const float eventEndMs = std::chrono::duration<float, std::milli>(event.getEnd() - start).count();
+            const float eventStartMs = std::chrono::duration<float, std::milli>(event->getStart() - start).count();
+            const float eventEndMs = std::chrono::duration<float, std::milli>(event->getEnd() - start).count();
+            const float eventDuration = std::chrono::duration<float, std::milli>(event->getDuration()).count();
             
-            auto scopeResult = scopes.find(event.getKey());
-            IYFT_ASSERT(scopeResult != scopes.end());
-            const ScopeInfo& scope = scopeResult->second;
-            
-            const float eventDuration = std::chrono::duration<float, std::milli>(event.getDuration()).count();
-            
-            auto colorResult = tags.find(static_cast<std::uint32_t>(scope.getTag()));
-            IYFT_ASSERT(colorResult != tags.end());
-            
-            const ImColor itemColor = ImColorFromScopeColor(colorResult->second.getColor());
-            const std::size_t itemID = std::distance(threadEvents.begin(), iter);
-            eventStatus |= DrawRectWithText(drawList, threadRecordDrawStart, recordedEventHeight, (recordedEventHeight + recordedEventSpacing) * event.getDepth(), pixelsPerMs,
+            const ImColor itemColor = ImColorFromScopeColor(nameAndColor->getColor());
+            eventStatus |= DrawRectWithText(drawList, threadRecordDrawStart, recordedEventHeight, (recordedEventHeight + recordedEventSpacing) * event->getDepth(), pixelsPerMs,
                                             eventStartMs, eventEndMs, itemColor, itemID, lastClickedItemID, hoveredItemCoordinates, primaryTextBuffer.data(), secondaryTextBuffer.data(),
-                                            TextBufferSize, "%s (%f ms)", scope.getName().c_str(), eventDuration);
-            
-            ++iter;
+                                            TextBufferSize, "%s (%f ms)", scope->getName().c_str(), eventDuration);
         }
         
         if (static_cast<bool>(eventStatus & ProfilerItemStatus::Clicked)) {
@@ -1604,37 +2101,170 @@ bool ProfilerResults::drawInImGui(float scale) {
     ImGui::EndChild();
     ImGui::EndChild();
     
-    const ImVec2 plotSize(size.x, 2 * lineWithSpacing);
-    ImGui::PlotLines("##FrameDurations", FrameDurationGetter, &frames, frames.size(), 0, nullptr, FLT_MAX, FLT_MAX, plotSize);
-    ImGui::Text("%f; MAX: %f; CUR: %f", scrollPercentage, scrollMax, scrollCurrent);
-    ImGui::Text("%lu, %lu", firstVisibleNanosecond.count(), lastVisibleNanosecond.count());
+//     ImGui::PopStyleVar();
     
-    if (lastClickedItemWasFrame) {
-        const FrameData& frame = frames[lastClickedItemID];
-        
-        ImGui::Text("%lu", lastClickedItemID);
-        ImGui::Text("FRAME: %lu", frame.getNumber());
-        DisplayTimingData(frame, start);
-    } else {
-        const std::deque<RecordedEvent>& threadEvents = events[threadWithSelectedItem];
-        const RecordedEvent& event = threadEvents[lastClickedItemID];
-        
-        auto scopeResult = scopes.find(event.getKey());
-        IYFT_ASSERT(scopeResult != scopes.end());
-        const ScopeInfo& scope = scopeResult->second;
-        
-        ImGui::Text("%lu; %lu", threadWithSelectedItem, lastClickedItemID);
-        ImGui::Text("EVENT: %s", scope.getName().c_str());
-        ImGui::Text("Function: %s", scope.getFunctionName().c_str());
-        ImGui::Text("Location: %s:%u", scope.getFileName().c_str(), scope.getLineNumber());
-        
-        DisplayTimingData(event, start);
+    ImGui::InvisibleButton("horizontalSplitter", ImVec2(-1,8.0f));
+    if (ImGui::IsItemActive()) {
+        splitterHeight += ImGui::GetIO().MouseDelta.y;
     }
     
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+    }
+    
+    ImGui::BeginChild("ProfilerStatsChild", ImVec2(0, 0), true);
+    const ImVec2 plotSize(size.x, 2 * lineWithSpacing);
+    
+    ImGui::SetNextTreeNodeOpen(false, ImGuiCond_Once);
+    if (ImGui::CollapsingHeader("Frame duration plot")) {
+        // I hate this const cast, but it's mandatory here. Besides, we're not modifying anything.
+        ImGui::PlotLines("##FrameDurations", FrameDurationGetter, const_cast<std::deque<FrameData>*>(&frames), frames.size(), 0, nullptr, shortestFrameDuration, longestFrameDuration, plotSize);
+    }
+    
+    ImGui::SetNextTreeNodeOpen(true, ImGuiCond_Once);
+    if (ImGui::CollapsingHeader("Selection information")) {
+        if (lastClickedItemWasFrame) {
+            const FrameData& frame = frames[lastClickedItemID];
+            
+            ImGui::Text("FRAME: %lu", frame.getNumber() - firstFrameNumber);
+            DisplayTimingData(frame, start);
+        } else {
+            const std::deque<RecordedEvent>& threadEvents = results->getEvents(threadWithSelectedItem);
+            const RecordedEvent& event = threadEvents[lastClickedItemID];
+            
+            const std::unordered_map<ScopeKey, ScopeInfo>& scopes = results->getScopes();
+            auto scopeResult = scopes.find(event.getKey());
+            IYFT_ASSERT(scopeResult != scopes.end());
+            const ScopeInfo& scope = scopeResult->second;
+            
+            ImGui::Text("EVENT: %s", scope.getName().c_str());
+            ImGui::Text("Function: %s\nLocation: %s:%u", scope.getFunctionName().c_str(), scope.getFileName().c_str(), scope.getLineNumber());
+            
+            DisplayTimingData(event, start);
+        }
+    }
+    
+    // TODO sort by column
+//     auto SortByTag = (const ScopeInfo& a, const ScopeInfo& b) {
+//         if (a.tag != b.tag) {
+//             return (a.tag < b.tag);
+//         } else {
+//             return (a.name < b.name);
+//         }
+//     };
+    ImGui::SetNextTreeNodeOpen(true, ImGuiCond_Once);
+    if (ImGui::CollapsingHeader("Recorded scopes")) {
+        ImGui::InputText("Filter", filterTextBuffer.data(), filterTextBuffer.size());
+        const std::size_t filterStringLength = std::strlen(filterTextBuffer.data());
+        
+        ImGui::Columns(7, "ScopeInfoColumns");
+        
+        ImGui::Separator();
+        
+        drawScopeInfoColumnName("Scope", sortedScopes, 
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.scopeInfo->getName() > b.scopeInfo->getName();
+                                },
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.scopeInfo->getName() < b.scopeInfo->getName();
+                                });
+        ImGui::NextColumn();
+        
+        drawScopeInfoColumnName("Tag", sortedScopes, 
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.tagInfo->getName() > b.tagInfo->getName();
+                                },
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.tagInfo->getName() < b.tagInfo->getName();
+                                });
+        ImGui::NextColumn();
+        
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Function");
+        ImGui::NextColumn();
+        
+        drawScopeInfoColumnName("Total calls", sortedScopes, 
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.stats->totalCalls < b.stats->totalCalls;
+                                },
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.stats->totalCalls > b.stats->totalCalls;
+                                });
+        ImGui::NextColumn();
+        
+        drawScopeInfoColumnName("Average duration", sortedScopes, 
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.stats->averageCallDuration < b.stats->averageCallDuration;
+                                },
+                                [](const FullScopeData& a, const FullScopeData& b) {
+                                    return a.stats->averageCallDuration > b.stats->averageCallDuration;
+                                });
+        ImGui::NextColumn();
+        
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Max duration (frame)");
+        ImGui::NextColumn();
+        
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Min duration (frame)");
+        ImGui::NextColumn();
+        
+        ImGui::Separator();
+        
+        for (const auto& s : sortedScopes) {
+            if (filterStringLength != 0 && s.scopeInfo->getName().find(filterTextBuffer.data()) == std::string::npos) {
+                continue;
+            }
+            
+            ImGui::Selectable(s.scopeInfo->getName().c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+            ImGui::NextColumn();
+            
+            ImGui::Text("%s", s.tagInfo->getName().c_str());
+            ImGui::NextColumn();
+            
+            ImGui::Text("%s", s.scopeInfo->getFunctionName().c_str());
+            ImGui::NextColumn();
+            
+            ImGui::Text("%lu", s.stats->totalCalls);
+            ImGui::NextColumn();
+            
+            ImGui::Text("%fms", s.stats->averageCallDuration.count());
+            ImGui::NextColumn();
+            
+            ImGui::Text("%fms (%lu)", s.stats->maxCallDuration.count(), s.stats->longestFrameNumber);
+            ImGui::NextColumn();
+            
+            ImGui::Text("%fms (%lu)", s.stats->minCallDuration.count(), s.stats->shortestFrameNumber);
+            ImGui::NextColumn();
+        }
+        
+        ImGui::Columns(1, "ScopeInfoColumns");
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+    
+    //ImGui::Text("%s", intervalTrees[0].print().c_str());
     ImGui::EndChild();
-//     ImGui::Text("Distances:%ld %ld\nEndTest:%lu\nEndOverall:%lu\nWidth:%f\nTotalWidth:%f\nStartVisible:%f", std::distance(frames.begin(), firstFrame), std::distance(frames.begin(), lastFrame),
-//                                 testFrame.getEnd().count(), end.count(), (clipRect.x - frameDrawStart.x), totalWidth, startVisible);
-    return true;
+    ImGui::EndChild();
+    
+    return ProfilerDrawResult::DrawnSuccessfully;
+}
+
+ProfilerDrawResult ProfilerResults::drawInImGui(float scale) {
+    if (drawData == nullptr) {
+        drawData = std::make_unique<ProfilerResultDrawData>(this);
+    }
+    
+    return drawData->draw(scale);
+}
+
+void ProfilerResultDrawData::FullEventData::print(std::stringstream& ss) const {
+    ss << "[" << event->getStart().count() << "; " << event->getEnd().count() << "]";
+}
+
+#else // IYFT_PROFILER_WITH_IMGUI
+ProfilerDrawResult ProfilerResults::drawInImGui(float) {
+    return ProfilerDrawResult::ImGuiNotAvailable;
 }
 #endif // IYFT_PROFILER_WITH_IMGUI
 }

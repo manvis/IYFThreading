@@ -9,7 +9,14 @@
 
 // Add the profiler and designate this cpp file as the implementation
 #define IYFT_THREAD_PROFILER_IMPLEMENTATION
+// This is a lightweight header that should be included in the file that will contain
+// the implementation and all files that contain functions you want to profile.
 #include "ThreadProfiler.hpp"
+// This header should only be included in two cases:
+// 1. the cpp has IYFT_THREAD_PROFILER_IMPLEMENTATION defined and contains the
+// implementation;
+// 2. in any files where you need to access, save or process the records.
+#include "ThreadProfilerCore.hpp"
 
 // Add the pool AFTER the profiler if IYFT_THREAD_POOL_PROFILE is defined
 #include "ThreadPool.hpp"
@@ -56,8 +63,9 @@ int main() {
     }
     
     // Write the results to an std::string and std::cout
-    // This will automatically stop the recording.
-    std::cout << IYFT_PROFILER_RESULT_STRING << "\n";
+    // Calling iyft::GetThreadProfiler().getResults() will automatically stop the
+    // recording.
+    std::cout << iyft::GetThreadProfiler().getResults().writeToString() << "\n";
     
     return 0;
 }

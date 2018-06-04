@@ -29,3 +29,4 @@
 // ONE cpp file has to contain the implementation
 #define IYFT_THREAD_PROFILER_IMPLEMENTATION
 #include "ThreadProfiler.hpp"
+#include "ThreadProfilerCore.hpp"
