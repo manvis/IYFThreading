@@ -318,6 +318,7 @@ public:
                (a.getEnd() == a.getEnd());
     }
     
+    /// \brief A comparison operator.
     inline friend bool operator<(const FrameData& a, const FrameData& b) {
         return a.getStart() < b.getStart();
     }
@@ -372,7 +373,7 @@ public:
     
     /// \brief Inserts the start of the scope.
     /// 
-    /// \param key The key of the scope.
+    /// \param info A ScopeInfo instance.
     inline void insertScopeStart(const ScopeInfo& info) {
         const ScopeKey key = info.getKey();
         
@@ -396,7 +397,7 @@ public:
     
     /// \brief Inserts the end of the scope.
     /// 
-    /// \param key The key of the scope.
+    /// \param info A ScopeInfo instance.
     inline void insertScopeEnd(const ScopeInfo& info) {
         const ScopeKey key = info.getKey();
         
@@ -519,26 +520,39 @@ ThreadProfiler& GetThreadProfiler();
 template <typename T>
 class InsertOnlyIntervalTree {
 public:
+    /// \brief The type used for interval values, e.g., float, std::chrono::nanoseconds, etc.
     using IntervalType = typename T::IntervalType;
     
+    /// \brief Creates a new InsertOnlyIntervalTree that can contain up to maxNodes
+    ///
+    /// \param maxNodes The maximum number of node this InsertOnlyIntervalTree can
+    /// contain.
     InsertOnlyIntervalTree(std::size_t maxNodes) : root(nullptr), maxNodes(maxNodes) {
         nodes.reserve(maxNodes);
     }
     
+    /// \brief Prints the tree nodes in pre order.
     std::string print() const;
     
+    /// \brief Finds intervals that intersect the searchInterval.
+    ///
+    /// \param searchInterval The interval to intersect with.
+    /// \param intervals Returns all intervals that intersect with the searchInterval
     void findIntervals(const T& searchInterval, std::vector<T>& intervals) const {
         findIntervals(root, searchInterval, intervals);
     }
     
+    /// \brief Returns the number of intervals stored in the tree.
     std::size_t size() const {
         return nodes.size();
     }
     
+    /// \brief Recalculates the maximums. Must be called after inserting all intervals.
     void updateMaximumValues() {
         updateMaximumValues(root);
     }
     
+    /// \brief Inserts a new interval
     void insert(const T& item) {
         root = insert(root, item);
         root->isRed = false;

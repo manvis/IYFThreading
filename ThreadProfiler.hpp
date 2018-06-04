@@ -347,10 +347,18 @@ static iyft::ScopeInfo& ScopeInfo##name = iyft::InsertScopeInfo(\
 
 #else //  defined(IYFT_ENABLE_PROFILING)
 
-// These will get optimized away if profiling is disabled
+/// \brief Depending on the number of parameters, chooses one of profiling macros.
 #define IYFT_PROFILE(...) ((void)0);
+
+/// \brief Used to start or stop a recording
+///
+/// \param a A boolean. If true, starts a recording, if false, stops it.
 #define IYFT_PROFILER_SET_RECORDING(a) ((void)0);
+
+/// \brief Starts the next frame.
 #define IYFT_PROFILER_NEXT_FRAME ((void)0);
+
+/// \brief Returns the status of the profiler as a ProfilerStatus value. 
 #define IYFT_PROFILER_STATUS iyft::ProfilerStatus::Disabled
 
 #endif // IYFT_ENABLE_PROFILING
