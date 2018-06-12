@@ -165,6 +165,6 @@ void drawiProfilerResults(float delta) {
 ```
 
 You'll get something like this:
-[screenshot](https://raw.githubusercontent.com/wiki/manvis/IYFThreading/images/profiler.png)
+![screenshot](https://raw.githubusercontent.com/wiki/manvis/IYFThreading/images/profiler.png)
 
 [3-clause BSD]: https://github.com/manvis/IYFThreading/blob/master/LICENSE
