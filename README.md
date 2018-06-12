@@ -115,5 +115,56 @@ int main() {
     return 0;
 }
 ```
+## Drawing in ImGui
+
+If your engine or framework uses [Ocornut's Dear ImGui](https://github.com/ocornut/imgui), you may draw the recorded data directly.
+
+```cpp
+// Make sure IYFT_PROFILER_WITH_IMGUI was defined or you'll get a ton of errors
+
+#include "imgui.h"
+#include "ThreadProfilerCore.hpp"
+
+// ...
+
+std::unique_ptr<iyft::ProfilerResults> profilerResults;
+void drawiProfilerResults(float delta) {
+    static float profilerZoom = 1.0f;
+    
+    ImGui::SetNextWindowSize(ImVec2(1200,750), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Profiler", nullptr)) {
+        if (IYFT_PROFILER_STATUS == iyft::ProfilerStatus::EnabledAndNotRecording) {
+            if (ImGui::Button("Start Recording")) {
+                IYFT_PROFILER_SET_RECORDING(true);
+            }
+        } else if (IYFT_PROFILER_STATUS == iyft::ProfilerStatus::EnabledAndRecording) {
+            if (ImGui::Button("Stop Recording")) {
+                IYFT_PROFILER_SET_RECORDING(false);
+                profilerResults = std::make_unique<iyft::ProfilerResults>(std::move(iyft::GetThreadProfiler().getResults()));
+            }
+        } else {
+            // The profiler must be enabled for recording to work
+            assert(0);
+        }
+        
+        ImGui::SameLine();
+        ImGui::SliderFloat("Zoom", &profilerZoom, iyft::ProfilerResults::GetMinScale(), iyft::ProfilerResults::GetMaxScale());
+        
+        if (profilerResults != nullptr) {
+            profilerResults->drawInImGui(profilerZoom);
+        } else {
+            ImGui::Text("Results not yet loaded or recorded.");
+        }
+    }
+    
+    ImGui::End();
+}
+
+// ...
+
+```
+
+You'll get something like this:
+[screenshot](https://raw.githubusercontent.com/wiki/manvis/IYFThreading/images/profiler.png)
 
 [3-clause BSD]: https://github.com/manvis/IYFThreading/blob/master/LICENSE

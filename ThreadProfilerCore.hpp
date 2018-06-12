@@ -981,6 +981,8 @@ private:
 #endif // IYFT_PROFILER_WITH_IMGUI
 }; 
 
+static_assert(std::is_move_assignable<ProfilerResults>::value && std::is_move_constructible<ProfilerResults>::value,
+              "ProfilerResults must be moveable");
 }
 
 #endif // IYFT_THREAD_PROFILER_CORE_HPP
