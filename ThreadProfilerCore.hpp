@@ -37,9 +37,9 @@
 #include <deque>
 #include <vector>
 #include <chrono>
-#include <optional>
 #include <array>
 #include <string>
+#include <memory>
 #include "Spinlock.hpp"
 
 #ifdef IYFT_PROFILER_WITH_IMGUI
@@ -186,7 +186,7 @@ public:
     ///
     /// \param start The start time as a duration since the clock's epoch.
     TimedProfilerObject(std::chrono::nanoseconds start) 
-        : start(start) {}
+        : start(start), end() {}
     
     virtual ~TimedProfilerObject() = default;
     
@@ -759,7 +759,6 @@ enum class ProfilerDrawResult {
 };
 
 #ifdef IYFT_PROFILER_WITH_IMGUI
-class ProfilerResults;
 
 class ProfilerResultDrawData {
 public:
@@ -876,8 +875,8 @@ public:
     ///
     /// \warning This reads the data in native byte order.
     ///
-    /// \return A ProfilerResults instance or a nullopt if file reading failed.
-    static std::optional<ProfilerResults> LoadFromFile(const std::string& path);
+    /// \return A ProfilerResults instance or a nullptr if file reading failed.
+    static std::unique_ptr<ProfilerResults> LoadFromFile(const std::string& path);
     
     /// \brief Writes the data to a file.
     ///
@@ -1000,8 +999,6 @@ private:
 #include <sstream>
 #include <algorithm>
 #include <sstream>
-
-using namespace std::chrono_literals;
 
 namespace iyft {
 
@@ -1254,36 +1251,36 @@ inline static std::string ReadString(std::istream& is) {
     return string;
 }
 
-std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& path) {
+std::unique_ptr<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& path) {
     // Warn about a file with cookies when no cookie support is enabled
-    ProfilerResults pr;
+    std::unique_ptr<ProfilerResults> pr(new ProfilerResults());
     
     std::ifstream is(path, std::ios::binary);
     
     if (!is.is_open()) {
-        return std::nullopt;
+        return nullptr;
     }
     
     // Magic number
     if (is.get() != 'I' || is.get() != 'Y' || is.get() != 'F' || is.get() != 'R') {
-        return std::nullopt;
+        return nullptr;
     }
     
     // Version and some parameters
     if (is.get() != 1) {
-        return std::nullopt;
+        return nullptr;
     }
     
-    pr.frameDataMissing = is.get();
-    pr.anyRecords = is.get();
-    pr.withCookie = is.get();
+    pr->frameDataMissing = is.get();
+    pr->anyRecords = is.get();
+    pr->withCookie = is.get();
     
     // Thread names
     const std::uint64_t threadCount = ReadUInt64(is);
-    pr.threadNames.reserve(threadCount);
+    pr->threadNames.reserve(threadCount);
     
     for (std::uint64_t i = 0; i < threadCount; ++i) {
-        pr.threadNames.push_back(ReadString(is));
+        pr->threadNames.push_back(ReadString(is));
     }
 
     // Frames
@@ -1297,12 +1294,12 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
         FrameData frame(frameNumber, start);
         frame.setEnd(end);
         
-        pr.frames.emplace_back(std::move(frame));
+        pr->frames.emplace_back(std::move(frame));
     }
     
     // Tags
     const std::uint64_t tagCount = ReadUInt64(is);
-    pr.tags.reserve(tagCount);
+    pr->tags.reserve(tagCount);
     
     for (std::uint64_t i = 0; i < tagCount; ++i) {
         std::uint32_t tagID = ReadUInt32(is);
@@ -1319,12 +1316,12 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
         
         TagNameAndColor nameAndColor(std::move(name), std::move(color));
         
-        pr.tags.emplace(tagID, std::move(nameAndColor));
+        pr->tags.emplace(tagID, std::move(nameAndColor));
     }
     
     // Scope info
     const std::uint64_t scopeCount = ReadUInt64(is);
-    pr.scopes.reserve(scopeCount);
+    pr->scopes.reserve(scopeCount);
     
     for (std::uint64_t i = 0; i < scopeCount; ++i) {
         const ScopeKey key(ReadUInt32(is));
@@ -1336,15 +1333,15 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
         const std::uint32_t lineNumber = ReadUInt32(is);
         
         ScopeInfo scopeInfo(key, name, functionName, fileName, lineNumber, tag);
-        pr.scopes.emplace(key, std::move(scopeInfo));
+        pr->scopes.emplace(key, std::move(scopeInfo));
     }
     
     // Events for each thread
-    pr.events.resize(threadCount);
+    pr->events.resize(threadCount);
     for (std::uint64_t i = 0; i < threadCount; ++i) {
         const std::uint64_t eventCount = ReadUInt64(is);
         
-        std::deque<RecordedEvent>& threadData = pr.events[i];
+        std::deque<RecordedEvent>& threadData = pr->events[i];
         for (std::uint64_t j = 0; j < eventCount; ++j) {
             const ScopeKey key(ReadUInt32(is));
             
@@ -1356,12 +1353,12 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
             event.setEnd(end);
 #ifdef IYFT_PROFILER_WITH_COOKIE
             const std::uint64_t cookie = 0;
-            if (pr.withCookie) {
+            if (pr->withCookie) {
                 cookie = ReadUInt64(is);
             }
             event.setCookie(cookie);
 #else // IYFT_PROFILER_WITH_COOKIE
-            if (pr.withCookie) {
+            if (pr->withCookie) {
                 ReadUInt64(is);
             }
 #endif // IYFT_PROFILER_WITH_COOKIE
@@ -1370,7 +1367,7 @@ std::optional<ProfilerResults> ProfilerResults::LoadFromFile(const std::string& 
         }
     }
     
-    return std::make_optional<ProfilerResults>(std::move(pr));
+    return pr;
 }
 
 inline static void WriteUInt64(std::ostream& os, std::uint64_t num) {
@@ -1653,6 +1650,10 @@ inline static void DisplayTimingData(const TimedProfilerObject& timedObject, std
     ImGui::Text("Start: %fms\nEnd: %fms\nDuration: %fms", startMs, endMs, durationMs);
 }
 
+inline static float CalculateThreadRowHeight(float eventHeight, float eventSpacing, const std::int32_t rowCount) {
+    return (eventHeight + eventSpacing) * (rowCount + 1) + eventSpacing;
+}
+
 inline static std::uint64_t ComputeFrameNumber(const std::deque<FrameData>& frames, std::chrono::nanoseconds value, std::uint64_t firstFrameNumber) {
     auto frameResult = std::lower_bound(frames.begin(), frames.end(), value, [](const FrameData& lhs, const std::chrono::nanoseconds& rhs){
         return lhs.getEnd() < rhs;
@@ -1912,6 +1913,8 @@ ProfilerResultDrawData::ProfilerResultDrawData(const ProfilerResults* results)
     
 ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
     // Splitter behaviour based on https://github.com/ocornut/imgui/issues/125#issuecomment-135775009
+    // I added some extra style var pushing and popping because spacing around event items disappears
+    // otherwise
     
     ImGui::BeginChild("ProfilerWrapper");
     if (validationStatus != ValidationStatus::Validated) {
@@ -1921,10 +1924,13 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
         return ProfilerDrawResult::DrawingFailed;
     }
     
-//     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,0));
-    ImGui::BeginChild("ProfilerMainContent", ImVec2(0, splitterHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
+    const ImVec2 defaultItemSpacing = ImGui::GetStyle().ItemSpacing;
     
-    scale = std::clamp(scale, ProfilerResults::GetMinScale(), ProfilerResults::GetMaxScale());
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,0));
+    ImGui::BeginChild("ProfilerMainContent", ImVec2(0, splitterHeight), true, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, defaultItemSpacing);
+    
+    scale = std::max(ProfilerResults::GetMinScale(), std::min(scale, ProfilerResults::GetMaxScale()));
     
     const std::deque<FrameData>& frames = results->getFrames();
     
@@ -1962,8 +1968,22 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
         scrollPercentage = scrollCurrent / totalWidth;
     }
     
-    //bool mouseOver = false;
     ImGui::BeginChild("ScrollingRegion", ImVec2(totalWidth, 0), false);
+    
+    const float leftmostPoint = ImGui::GetCursorScreenPos().x;
+    const float threadNameTextX = clipRect.x + ImGui::GetStyle().ItemSpacing.x;
+    
+    // Compute the cutoff points for horizontal clipping, by determining the first and the last visible nanosecond
+    // Since all frames and events are sorted, we can use these values together with a binary search (lower_bound)
+    // to clip the ranges extremely quickly.
+    const std::int64_t startNanosOffset = static_cast<std::int64_t>(durationNanos.count() * ((clipRect.x - leftmostPoint) / totalWidth));
+    const std::int64_t endNanosOffset = static_cast<std::int64_t>(durationNanos.count() * ((clipRect.z - leftmostPoint) / totalWidth));
+    const std::chrono::nanoseconds firstVisibleNanosecond(start + std::chrono::nanoseconds(startNanosOffset));
+    const std::chrono::nanoseconds lastVisibleNanosecond(start + std::chrono::nanoseconds(endNanosOffset));
+    
+    // Make sure the text is always visible
+    ImGui::SetCursorScreenPos(ImVec2(threadNameTextX, ImGui::GetCursorScreenPos().y));
+//     ImGui::Text("%f;%f", leftmostPoint, startNanosOffset);
     ImGui::Text("Frames: %lu. Total time: %.2f ms; %.2f ms/frame (%.2f FPS)", frameCount, recordDuration, msPerFrame, FPS);
     if (results->isFrameDataMissing()) {
         ImGui::SameLine();
@@ -1972,14 +1992,6 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
     
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImVec2 tickDrawStart = ImGui::GetCursorScreenPos();
-    
-    // Compute the cutoff points for horizontal clipping, by determining the first and the last visible nanosecond
-    // Since all frames and events are sorted, we can use these values together with a binary search (lower_bound)
-    // to clip the ranges extremely quickly.
-    const std::int64_t startNanosOffset = static_cast<std::int64_t>(durationNanos.count() * ((clipRect.x - tickDrawStart.x) / totalWidth));
-    const std::int64_t endNanosOffset = static_cast<std::int64_t>(durationNanos.count() * ((clipRect.z - tickDrawStart.x) / totalWidth));
-    const std::chrono::nanoseconds firstVisibleNanosecond(start + std::chrono::nanoseconds(startNanosOffset));
-    const std::chrono::nanoseconds lastVisibleNanosecond(start + std::chrono::nanoseconds(endNanosOffset));
     
     const float tallTickHeight = lineWithSpacing * 1.5f;
     const float shortTickVerticalOffset = lineWithSpacing;
@@ -2060,13 +2072,21 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
     
     ImGui::Separator();
     
+//     const int clipRectStartX = frameDrawStart.x;
+//     const int clipRectEndX = frameDrawStart.x + totalWidth;
+//     const int clipRectStartY = frameDrawStart.y + frameHeight;
+//     const int clipRectEndY = frameDrawStart.y + frameHeight + 100.0f;
+//     drawList->PushClipRect(ImVec2(clipRectStartX, clipRectStartY), ImVec2(clipRectEndX, clipRectEndY), false);
+    
     const float recordedEventHeight = lineWithoutSpacing;
     const float recordedEventSpacing = lineSpacing;
     
     ProfilerItemStatus allThreadEventStatus = ProfilerItemStatus::NoInteraction;
     for (std::size_t i = 0; i < results->getThreadCount(); ++i) {
+        // Make sure the name is always visible
+        ImGui::SetCursorScreenPos(ImVec2(threadNameTextX, ImGui::GetCursorScreenPos().y));
         const std::string& threadName = results->getThreadName(i);
-        ImGui::Text("%s", threadName.c_str());
+        ImGui::Text("Thread: %s", threadName.c_str());
         
         drawnIntervals.clear();
         
@@ -2074,8 +2094,11 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
         checkInterval.setEnd(lastVisibleNanosecond);
         intervalTrees[i].findIntervals(FullEventData(0, &checkInterval, nullptr, nullptr), drawnIntervals);
         
-        const ImVec2 threadRecordDrawStart = ImGui::GetCursorScreenPos();
-        const std::int32_t rowCount = maxDepths[i] + 1;
+        const ImVec2 threadRecordCursorPos = ImGui::GetCursorScreenPos();
+        const ImVec2 threadRecordDrawStart(threadRecordCursorPos.x, threadRecordCursorPos.y + recordedEventSpacing);
+        const float totalHeight = CalculateThreadRowHeight(recordedEventHeight, recordedEventSpacing, maxDepths[i]);
+        
+        drawList->AddRectFilled(threadRecordCursorPos, ImVec2(totalWidth, threadRecordCursorPos.y + totalHeight), ImColor(0.0f, 0.0f, 0.0f, 0.5f));
         
         ProfilerItemStatus eventStatus = ProfilerItemStatus::NoInteraction;
         
@@ -2102,9 +2125,22 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
         
         allThreadEventStatus |= eventStatus;
         
-        ImGui::SetCursorScreenPos(ImVec2(threadRecordDrawStart.x, threadRecordDrawStart.y + ((recordedEventHeight + recordedEventSpacing) * rowCount)));
+        ImGui::SetCursorScreenPos(ImVec2(threadRecordDrawStart.x, threadRecordDrawStart.y + totalHeight));
         ImGui::Spacing();
         ImGui::Separator();
+    }
+    
+    if (ImGui::IsWindowHovered()) {
+        const ImVec2 mouseCoords = ImGui::GetMousePos();
+//         const char* textBuffer = "Hey";
+//         const ImVec2 textSize = ImGui::CalcTextSize(textBuffer);
+//         const ImVec2 rectStart(mouseCoords.x - textSize.x - 2 * PADDING, mouseCoords.y);
+//         const ImVec2 rectEnd(mouseCoords.x, mouseCoords.y + lineWithoutSpacing);
+//         
+//         drawList->AddRectFilled(rectStart, rectEnd, ImColor(0.0f, 0.0f, 0.0f, 0.92f));
+//         drawList->AddText(ImVec2(rectStart.x + PADDING, rectStart.y), ImColor(1.0f, 1.0f, 1.0f), textBuffer);
+        
+        drawList->AddLine(ImVec2(mouseCoords.x, tickDrawStart.y + tallTickHeight), ImVec2(mouseCoords.x, ImGui::GetCursorScreenPos().y), ImColor(1.0f, 0.0f, 0.0f, 0.5f), 3.0f);
     }
     
     // Draw the names of hovered events separately to make sure they are visible on top of evrything else.
@@ -2112,15 +2148,17 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
         DrawHoveredText(drawList, secondaryTextBuffer.data(), hoveredItemCoordinates, lineWithoutSpacing);
     }
     
+    //drawList->PopClipRect();
     ImGui::EndChild();
+    ImGui::PopStyleVar();
     ImGui::EndChild();
-    
-//     ImGui::PopStyleVar();
     
     ImGui::InvisibleButton("horizontalSplitter", ImVec2(-1,8.0f));
     if (ImGui::IsItemActive()) {
         splitterHeight += ImGui::GetIO().MouseDelta.y;
     }
+    
+    ImGui::PopStyleVar();
     
     if (ImGui::IsItemHovered()) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
@@ -2158,14 +2196,6 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
         }
     }
     
-    // TODO sort by column
-//     auto SortByTag = (const ScopeInfo& a, const ScopeInfo& b) {
-//         if (a.tag != b.tag) {
-//             return (a.tag < b.tag);
-//         } else {
-//             return (a.name < b.name);
-//         }
-//     };
     ImGui::SetNextTreeNodeOpen(true, ImGuiCond_Once);
     if (ImGui::CollapsingHeader("Recorded scopes")) {
         ImGui::InputText("Filter", filterTextBuffer.data(), filterTextBuffer.size());
@@ -2266,7 +2296,7 @@ ProfilerDrawResult ProfilerResultDrawData::draw(float scale) {
 
 ProfilerDrawResult ProfilerResults::drawInImGui(float scale) {
     if (drawData == nullptr) {
-        drawData = std::make_unique<ProfilerResultDrawData>(this);
+        drawData = std::unique_ptr<ProfilerResultDrawData>(new ProfilerResultDrawData(this));
     }
     
     return drawData->draw(scale);

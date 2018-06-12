@@ -39,6 +39,10 @@
 #include <queue>
 #include <iostream>
 
+#if __cplusplus >= 201703L
+#define IYFT_HAS_CPP17
+#endif
+
 #ifdef IYFT_THREAD_POOL_PROFILE
 #include "ThreadProfiler.hpp"
 #endif // IYFT_THREAD_POOL_PROFILE
@@ -249,12 +253,22 @@ public:
     
     /// \brief Adds a task that returns a future.
     template<typename F, typename... Args>
+#ifdef IYFT_HAS_CPP17
     std::future<std::invoke_result_t<F, Args...>> addTaskWithResult(F&& f, Args&&... args) {
+#else // IYFT_HAS_CPP17
+     std::future<typename std::result_of<F&&(Args&&...)>::type> addTaskWithResult(F&& f, Args&&... args) {
+#endif // IYFT_HAS_CPP17
+    
 #ifdef IYFT_THREAD_POOL_PROFILE
         IYFT_PROFILE(AddTaskWithResultNoBarrier);
 #endif // IYFT_THREAD_POOL_PROFILE
 
+#ifdef IYFT_HAS_CPP17
         using ReturnValueType = std::invoke_result_t<F, Args...>;
+#else // IYFT_HAS_CPP17
+        using ReturnValueType = typename std::result_of<F&&(Args&&...)>::type;
+#endif // IYFT_HAS_CPP17
+        
         using TaskType = std::packaged_task<ReturnValueType()>;
         
         TaskType task(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
@@ -277,11 +291,20 @@ public:
     /// \brief Adds a task that returns a future and notifies a barrier upon 
     /// completion.
     template<typename F, typename... Args>
+#ifdef IYFT_HAS_CPP17
     std::future<std::invoke_result_t<F, Args...>> addTaskWithResult(Barrier& barrier, F&& f, Args&&... args) {
+#else // IYFT_HAS_CPP17
+    std::future<typename std::result_of<F&&(Args&&...)>::value> addTaskWithResult(Barrier& barrier, F&& f, Args&&... args) {
+#endif // IYFT_HAS_CPP17
 #ifdef IYFT_THREAD_POOL_PROFILE
         IYFT_PROFILE(AddTaskWithResultWithBarrier);
 #endif // IYFT_THREAD_POOL_PROFILE
+        
+#ifdef IYFT_HAS_CPP17
         using ReturnValueType = std::invoke_result_t<F, Args...>;
+#else // IYFT_HAS_CPP17
+        using ReturnValueType = typename std::result_of<F&&(Args&&...)>::type;
+#endif // IYFT_HAS_CPP17
         using TaskType = std::packaged_task<ReturnValueType()>;
         
         TaskType task(std::bind(std::forward<F>(f), std::forward<Args>(args)...));

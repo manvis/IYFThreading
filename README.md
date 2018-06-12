@@ -1,28 +1,35 @@
 # The IYFThreading library
 
-This is a small, header only C++17 library that contains a thread pool and a thread profiler. It is licensed under the [3-clause BSD] license and depends only on the standard library. Last but not least, when testing, this library is built with -fsanitize=thread and the sanitizer does not detect any invalid behaviour.
+This is a header only C++11 (and later) library that contains a thread pool and a profiler. It is licensed under the [3-clause BSD] license and only depends on the standard library. Last but not least, when testing, this library is built with ```-fsanitize=thread``` and the sanitizer does not detect any invalid behaviour.
 
-This library consists of a couple components that, for the most part, may be used independently of one another:
+Some components of this library may be used independently of one another. Here's a list of what does what:
 
-1. **ThreadPool.hpp**: independent of other headers, unless you enable thread pool profiling. The thread pool distributes assigned work to multiple worker threads. It supports barriers (blocking until specified tasks complete) and tasks with or without returned results.
-2. **ThreadProfiler.hpp**:  depends on the spinlock header. Allows you to assign thread names and to retrieve constant sequential IDs for threads even if profiling is disabled. Enables you to record the durations of specified scopes with the help of instrumentation macros. The results may be written to a human readable string, a binary file or displayed immediately.
-3. **ThreadProfilerSettings.hpp**: customizable settings and values, specific to your project. Make sure to not accidentally overwrite this file when updating this library.
-4. **Spinlock.hpp**: a really basic atomic_flag based spinlock that anyone can write in a minute. Independent of other headers.
+1. **ThreadPool.hpp**: independent of other headers, unless you enable thread pool profiling. The thread pool distributes assigned work to multiple worker threads. It supports barriers (blocking a thread until specified tasks complete) and tasks with or without returned results.
+2. **ThreadProfiler.hpp**: Depends on the *ThreadProfilerSettings* header. A lightweight header that contains function definitions and macros used for profiling. It enables you to record the durations of specified scopes. Moreover, even if profiling is disabled, you may use some of the macros defined in this header to assign names to your threads and to retrieve constant sequential zero-based IDs for them as well.
+3. **ThreadProfilerCore.hpp**:  depends on the *Spinlock* and *ThreadProfilerSettings* headers. Heavy, but you only need to include it in two cases:
+    1. the cpp file will contain the implementation (that is, ```IYFT_THREAD_PROFILER_IMPLEMENTATION``` will be defined in it);
+    2. the functions in the file will need to retrieve, process and/or draw the recorded results using [Ocornut's Dear ImGui](https://github.com/ocornut/imgui).
+4. **ThreadProfilerSettings.hpp**: customizable settings and values, specific to your project. Make sure to not accidentally overwrite this file when updating this library. 
+5. **Spinlock.hpp**: a really basic atomic_flag based spinlock that anyone can write in a minute. Independent of other headers.
 
-This library is still being tested and refined. Moreover, a couple important features (e.g., drawing results with the help of imgui) haven't been implemented yet.
+This library is still being tested and refined. You should consider it to be a **BETA VERSION**.
 
 ## Configuration
-Two macros need to be defined (or not, if you want to disable the features) globally, e.g., in your CMake file:
+Three macros need to be defined (or not, if you want to disable the features) globally, e.g., in your CMake file:
 
 1. ```IYFT_ENABLE_PROFILING```
 
-  **Defining** this macro will **enable profiling**. Even if you don't record anything, having profiling enabled will introduce some overhead to your code.
+  **Defining** this macro will **enable profiling**. Even if you don't record anything, having profiling enabled will introduce a little bit of overhead to your code.
 
-  If this macro **isn't defined**, most ```IYFT_PROFILER``` macros will **do nothing** or return constant **empty values**. Moreover, most of the profiler's functions and classes won't even be compiled.
+  If this macro **isn't defined**, most ```IYFT_PROFILER``` macros will **do nothing** or return **constant values**.
 
 2. ```IYFT_THREAD_POOL_PROFILE```
 
   **Defining** this macro **enables profiling of the thread pool**. If this macro is defined, but ```IYFT_ENABLE_PROFILING``` isn't, profiling will still be disabled. Moreover, defining this macro will force **ThreadPool.hpp** to include **ThreadProfiler.hpp**.
+
+3. ```IYFT_PROFILER_WITH_IMGUI```
+
+  **Defining** this macro allows you to **draw the results** retrieved from the profiler using [Ocornut's Dear ImGui](https://github.com/ocornut/imgui). Defining this macro will make the **ThreadProfilerCore.hpp** include **imgui.h**
 
 Other options only apply to the thread profiler. They are documented in the **ThreadProfilerSettings.hpp** header and should be adjusted there. You should also use the said header to define custom scope tags, names and colours, suitable for your application.
 
@@ -36,9 +43,11 @@ This is a simple example. For a more complete example that uses more features, c
 ```cpp
 // This needs to be built with -DIYFT_ENABLE_PROFILING (and, optionally, -DIYFT_THREAD_POOL_PROFILE), e.g, on Linux:
 //
-// clang++ -pthread -std=c++17 -Wall -Wextra -pedantic -DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE MinimalTest.cpp
+// clang++ -pthread -std=c++11 -Wall -Wextra -pedantic -DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE MinimalTest.cpp
 // OR
-// g++ -pthread -std=c++17 -Wall -Wextra -pedantic -DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE MinimalTest.cpp
+// g++ -pthread -std=c++11 -Wall -Wextra -pedantic -DIYFT_ENABLE_PROFILING -DIYFT_THREAD_POOL_PROFILE MinimalTest.cpp
+//
+// C++11 is the minimum supported standard version.
 
 #include <iostream>
 #include <string>

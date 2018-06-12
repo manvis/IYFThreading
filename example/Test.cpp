@@ -45,7 +45,11 @@
 
 const std::size_t IterationCount = 5;
 
-using namespace std::chrono_literals;
+/// If you use c++14 or later, you may replace this with:
+/// using namespace std::chrono_literals;
+inline std::chrono::milliseconds ms(int x) {
+    return std::chrono::milliseconds(x);
+}
 
 /// A function used for demo purposes.
 void subSleeper() {
@@ -136,7 +140,7 @@ int main() {
     //
     // The setup function (lambda in this case) runs in each thread and can be
     // used to assign custom names, priorities, core affinities, etc.
-    std::unique_ptr<iyft::ThreadPool> pool = std::make_unique<iyft::ThreadPool>([](std::size_t total, std::size_t current) {
+    std::unique_ptr<iyft::ThreadPool> pool(new iyft::ThreadPool([](std::size_t total, std::size_t current) {
         std::stringstream ss;
         ss << "CustomThread" << current << "of" << total;
         IYFT_PROFILER_NAME_THREAD(ss.str().c_str());
@@ -149,23 +153,23 @@ int main() {
 #elif defined _WIN32
         //TODO what to do
 #endif
-    });
+    }));
     
     std::size_t threadCount = pool->getWorkerCount();
     
     // "Simulates" frames
     for (std::size_t i = 0; i < IterationCount; ++i) {
-        pool->addTaskWithResult(sleepingAnswer, incrementExpected(4ms), true);
+        pool->addTaskWithResult(sleepingAnswer, incrementExpected(ms(4)), true);
         
-        pool->addTask(sleeper, incrementExpected(2ms));
-        pool->addTask(sleeperLambda, incrementExpected(1ms));
+        pool->addTask(sleeper, incrementExpected(ms(2)));
+        pool->addTask(sleeperLambda, incrementExpected(ms(1)));
         
-        auto resultFuture = pool->addTaskWithResult(sleepingAnswer, incrementExpected(8ms), true);
+        auto resultFuture = pool->addTaskWithResult(sleepingAnswer, incrementExpected(ms(8)), true);
         
         iyft::Barrier bar1(3);
-        pool->addTask(bar1, sleeper, incrementExpected(2ms));
-        pool->addTask(bar1, sleeperLambda, incrementExpected(6ms));
-        pool->addTask(bar1, sleeper, incrementExpected(2ms));
+        pool->addTask(bar1, sleeper, incrementExpected(ms(2)));
+        pool->addTask(bar1, sleeperLambda, incrementExpected(ms(6)));
+        pool->addTask(bar1, sleeper, incrementExpected(ms(2)));
         
         // Blocks the current thread until all tasks that use bar1 complete.
         auto barrierStart = std::chrono::high_resolution_clock::now();
@@ -178,10 +182,10 @@ int main() {
         std::size_t theAnswer = resultFuture.get();
         assert(theAnswer == 42);
         
-        pool->addTask(sleeperLambda, incrementExpected(5ms));
+        pool->addTask(sleeperLambda, incrementExpected(ms(5)));
         
-        pool->addTask(sleeper, incrementExpected(2ms));
-        pool->addTask(sleeperLambda, incrementExpected(1ms));
+        pool->addTask(sleeper, incrementExpected(ms(2)));
+        pool->addTask(sleeperLambda, incrementExpected(ms(1)));
         
         if (i != IterationCount - 1) {
             pool->waitForAll();
@@ -233,9 +237,9 @@ int main() {
     // Now that we're done measuring, output the results to a file and try to read them.
     std::cout << std::boolalpha;
     std::cout << "Result write succeeded? " << results.writeToFile("profilerResults.profres") << "\n";
-    std::optional<iyft::ProfilerResults> loadedResults = iyft::ProfilerResults::LoadFromFile("profilerResults.profres");
+    auto loadedResults = iyft::ProfilerResults::LoadFromFile("profilerResults.profres");
     
-    if (!loadedResults) {
+    if (loadedResults == nullptr) {
         std::cout << "Failed to load results from file\n";
         assert(false);
     } else {

@@ -180,7 +180,7 @@ private:
 #define IYFT_THREAD_TEXT_OUTPUT_NAME "ms"
 #endif // !defined IYFT_THREAD_TEXT_OUTPUT_DURATION || !defined IYFT_THREAD_TEXT_OUTPUT_NAME
 
-static_assert(IYFT_THREAD_PROFILER_MAX_THREAD_COUNT >= 1);
+static_assert(IYFT_THREAD_PROFILER_MAX_THREAD_COUNT >= 1, "IYFT_THREAD_PROFILER_MAX_THREAD_COUNT must be >= 1");
 
 namespace iyft {
 /// \brief Marks the start of the next frame.
