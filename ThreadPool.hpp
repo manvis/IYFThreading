@@ -101,7 +101,7 @@ private:
             }
         }
         
-        barrierCondition.notify_one();
+        barrierCondition.notify_all();
     }
     
     /// \brief The number of tasks to block for.
